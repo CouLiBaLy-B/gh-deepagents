@@ -1,0 +1,10 @@
+# Dependencies for Streamlit Community Cloud.
+# Cloud reads requirements.txt at the repo root (or alongside the entrypoint).
+# We list ONLY what the dashboard needs — no LLM providers, no Redis client
+# (the dashboard talks to a remote webhook, not Redis directly).
+
+streamlit>=1.36.0
+pandas>=2.0
+httpx>=0.27
+python-dotenv>=1.0.1
+pydantic>=2.7.0

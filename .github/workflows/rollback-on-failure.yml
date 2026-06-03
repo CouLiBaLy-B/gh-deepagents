@@ -1,0 +1,181 @@
+name: Post-deploy health & auto-rollback
+
+# Runs after every successful deploy workflow. Polls the deployed instance's
+# /healthz and /metrics for `--timeout` seconds; if it stays degraded or the
+# failed-job rate climbs above `--max-error-rate`, the last successful
+# commit on `main` is reverted via a fresh commit (NEVER force-pushed).
+#
+# Configure:
+#   vars.PROD_URL            — public URL of your deployed webhook
+#   secrets.PROD_ADMIN_TOKEN — admin token to read /metrics (optional but recommended)
+
+on:
+  workflow_run:
+    workflows:
+      - "Deploy → HF Spaces (dashboard)"
+      - "Deploy → HF Spaces (all-in-one demo)"
+      - "Publish images to GHCR"
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      url:
+        description: "Override URL to probe"
+        required: false
+
+concurrency:
+  group: rollback-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write       # for the revert commit
+  pull-requests: write
+  issues: write         # to open an issue if rollback fires
+
+jobs:
+  health-check:
+    # Only act on successful runs (a failed deploy doesn't need a rollback).
+    if: github.event_name == 'workflow_dispatch' ||
+        github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      verdict: ${{ steps.probe.outputs.verdict }}
+      exit_code: ${{ steps.probe.outputs.exit_code }}
+    env:
+      PROD_URL: ${{ github.event.inputs.url || vars.PROD_URL }}
+      ADMIN_TOKEN: ${{ secrets.PROD_ADMIN_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Skip if PROD_URL not configured
+        if: env.PROD_URL == ''
+        run: |
+          echo "::notice::vars.PROD_URL not set; skipping post-deploy health check."
+          echo "verdict=skipped" >> $GITHUB_OUTPUT
+          exit 0
+
+      - name: Probe /healthz and /metrics
+        id: probe
+        if: env.PROD_URL != ''
+        continue-on-error: true
+        run: |
+          set +e
+          python .github/scripts/post-deploy-healthcheck.py \
+            --url "$PROD_URL" \
+            --admin-token "$ADMIN_TOKEN" \
+            --timeout 300 --grace 90 --interval 15 \
+            --max-error-rate 0.25 --min-samples 5
+          code=$?
+          echo "exit_code=$code" >> $GITHUB_OUTPUT
+          if [ "$code" -eq 0 ]; then
+            echo "verdict=healthy" >> $GITHUB_OUTPUT
+          else
+            echo "verdict=unhealthy" >> $GITHUB_OUTPUT
+          fi
+          exit 0
+
+  rollback:
+    needs: health-check
+    if: needs.health-check.outputs.verdict == 'unhealthy'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      EXIT: ${{ needs.health-check.outputs.exit_code }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Determine the offending commit
+        id: bad
+        run: |
+          # Most recent commit on main (the one that triggered the deploy).
+          SHA=$(git rev-parse main)
+          PARENT=$(git rev-parse "${SHA}^")
+          echo "sha=$SHA" >> $GITHUB_OUTPUT
+          echo "short=${SHA:0:7}" >> $GITHUB_OUTPUT
+          echo "parent=$PARENT" >> $GITHUB_OUTPUT
+          echo "parent_short=${PARENT:0:7}" >> $GITHUB_OUTPUT
+          echo "subject=$(git log -1 --pretty=%s $SHA)" >> $GITHUB_OUTPUT
+
+      - name: Create revert commit on a branch
+        id: revert
+        env:
+          SHA:    ${{ steps.bad.outputs.sha }}
+          PARENT: ${{ steps.bad.outputs.parent }}
+        run: |
+          set -euo pipefail
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name  "github-actions[bot]"
+          BRANCH="rollback/${SHA:0:7}-$(date +%s)"
+          git checkout -b "$BRANCH"
+          # `git revert -m 1` works for both regular and merge commits.
+          if ! git revert --no-edit -m 1 "$SHA"; then
+            # Fall back to a plain revert (non-merge commit)
+            git revert --abort || true
+            git revert --no-edit "$SHA"
+          fi
+          git push origin "$BRANCH"
+          echo "branch=$BRANCH" >> $GITHUB_OUTPUT
+
+      - name: Open a revert PR
+        id: pr
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const {data: pr} = await github.rest.pulls.create({
+              owner: context.repo.owner, repo: context.repo.repo,
+              base: "main",
+              head: "${{ steps.revert.outputs.branch }}",
+              title: "revert: rollback ${{ steps.bad.outputs.short }} after failed deploy",
+              body: [
+                "🚨 **Automatic rollback** opened by the `rollback-on-failure` workflow.",
+                "",
+                "The deploy that included this commit:",
+                "",
+                `- **${{ steps.bad.outputs.short }}** — ${{ steps.bad.outputs.subject }}`,
+                "",
+                `Healthcheck verdict: exit code **${process.env.EXIT}** ` +
+                "(1=degraded, 2=error-rate-too-high, 3=unreachable).",
+                "",
+                "If this is a false positive, close the PR. Otherwise **merge",
+                "this PR ASAP** to restore the previous version.",
+              ].join("\n"),
+            });
+            core.setOutput("number", pr.number);
+            core.setOutput("url", pr.html_url);
+
+      - name: Auto-merge if AUTO_MERGE_ROLLBACKS is set
+        if: vars.AUTO_MERGE_ROLLBACKS == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.pulls.merge({
+              owner: context.repo.owner, repo: context.repo.repo,
+              pull_number: ${{ steps.pr.outputs.number }},
+              merge_method: "squash",
+              commit_title: "revert: auto-rollback ${{ steps.bad.outputs.short }}",
+            });
+
+      - name: Open tracking issue
+        uses: actions/github-script@v7
+        env:
+          PR_URL: ${{ steps.pr.outputs.url }}
+          BAD_SHA: ${{ steps.bad.outputs.sha }}
+        with:
+          script: |
+            await github.rest.issues.create({
+              owner: context.repo.owner, repo: context.repo.repo,
+              title: `🚨 Auto-rollback after ${process.env.BAD_SHA.slice(0,7)}`,
+              labels: ["rollback", "needs-triage"],
+              body: [
+                `Healthcheck failed after deploying \`${process.env.BAD_SHA}\`.`,
+                ``,
+                `- Rollback PR: ${process.env.PR_URL}`,
+                `- Probed URL: ${{ vars.PROD_URL }}`,
+                `- Verdict: ${{ needs.health-check.outputs.exit_code }} (1=degraded, 2=error-rate, 3=unreachable)`,
+                ``,
+                `Please root-cause and re-deploy.`,
+              ].join("\n"),
+            });

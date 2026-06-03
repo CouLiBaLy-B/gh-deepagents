@@ -1,0 +1,24 @@
+[Unit]
+Description=gh-deepagent webhook server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=deepagent
+Group=deepagent
+WorkingDirectory=/opt/gh-deepagent
+EnvironmentFile=/etc/gh-deepagent.env
+ExecStart=/opt/gh-deepagent/.venv/bin/gh-deepagent serve --host 0.0.0.0 --port 8080
+Restart=on-failure
+RestartSec=5s
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/gh-deepagent /tmp
+
+[Install]
+WantedBy=multi-user.target

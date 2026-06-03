@@ -1,0 +1,15 @@
+# Replace `deepagent.example.com` with your real hostname.
+# Caddy will provision a Let's Encrypt cert automatically.
+
+deepagent.example.com {
+    encode gzip
+
+    @webhook path /webhook /healthz
+    handle @webhook {
+        reverse_proxy gh-deepagent:8080
+    }
+
+    handle {
+        respond "gh-deepagent webhook" 200
+    }
+}

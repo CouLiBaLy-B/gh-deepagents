@@ -1,0 +1,89 @@
+name: Deploy → HF Spaces (dashboard)
+
+# Triggered on every push to main. Builds a tiny tarball containing only what
+# the dashboard Space needs, then mirrors it to the Hugging Face Space repo.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/gh_deepagent/dashboard/**"
+      - "src/gh_deepagent/__init__.py"
+      - "pyproject.toml"
+      - "deploy/huggingface/dashboard/**"
+      - ".github/workflows/deploy-hf-dashboard.yml"
+  workflow_dispatch:
+    inputs:
+      hf_space:
+        description: "Override target Space (org/name)"
+        required: false
+
+concurrency:
+  group: deploy-hf-dashboard
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Mirror to ${{ vars.HF_DASHBOARD_SPACE || 'huggingface space (configure HF_DASHBOARD_SPACE)' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      HF_SPACE: ${{ github.event.inputs.hf_space || vars.HF_DASHBOARD_SPACE }}
+      HF_USER:  ${{ vars.HF_USER }}
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
+    steps:
+      - name: Sanity-check secrets
+        run: |
+          : "${HF_SPACE:?HF_DASHBOARD_SPACE variable required (org/space-name)}"
+          : "${HF_USER:?HF_USER variable required}"
+          : "${HF_TOKEN:?HF_TOKEN secret required (token with write access)}"
+
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # required so Git can compute the right deltas
+          path: source
+
+      - name: Stage Space contents
+        working-directory: source
+        run: |
+          mkdir -p ../space
+          # README + Dockerfile come from the deploy/ tree (with HF YAML frontmatter)
+          cp deploy/huggingface/dashboard/README.md   ../space/README.md
+          cp deploy/huggingface/dashboard/Dockerfile  ../space/Dockerfile
+          # Application code & metadata
+          cp pyproject.toml ../space/pyproject.toml
+          mkdir -p ../space/src
+          cp -r src/gh_deepagent ../space/src/gh_deepagent
+          # Don't ship the test suite — Space build is faster
+          find ../space/src -name "__pycache__" -type d -prune -exec rm -rf {} +
+          echo "::group::Space tree"
+          find ../space -maxdepth 3 -type f | sort
+          echo "::endgroup::"
+
+      - name: Push to Hugging Face Space
+        working-directory: space
+        run: |
+          set -euo pipefail
+          git init -q -b main
+          git config user.email  "deepagent-bot@users.noreply.github.com"
+          git config user.name   "deepagent-bot"
+          git remote add origin  "https://$HF_USER:$HF_TOKEN@huggingface.co/spaces/$HF_SPACE"
+          # Pull whatever is currently on the Space so we always commit on top
+          # (avoids force-push, lets HF preserve build history & comments).
+          git fetch origin main || echo "::notice::empty Space; first deploy"
+          if git rev-parse --verify origin/main >/dev/null 2>&1; then
+            git reset --soft origin/main
+          fi
+          git add -A
+          if git diff --cached --quiet; then
+            echo "::notice::No changes to deploy."
+            exit 0
+          fi
+          SHA="${{ github.sha }}"
+          git commit -m "ci: sync dashboard from ${SHA:0:7}" \
+                     -m "Source: github.com/${{ github.repository }}@$SHA"
+          git push origin main

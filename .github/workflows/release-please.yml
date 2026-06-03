@@ -1,0 +1,37 @@
+name: Release Please
+
+# release-please watches conventional commits on `main` and maintains a
+# rolling "release PR" that bumps the version, regenerates CHANGELOG.md, and
+# tags the commit when merged. Tagging the commit triggers publish-image.yml
+# which builds & pushes the versioned Docker images, and a GitHub Release is
+# created with auto-generated release notes.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: release-please
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          # Reads .release-please-config.json + .release-please-manifest.json
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Annotate run
+        if: steps.release.outputs.release_created == 'true'
+        run: |
+          echo "::notice title=Release published::Version ${{ steps.release.outputs.tag_name }}"

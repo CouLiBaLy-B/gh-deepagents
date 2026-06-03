@@ -1,0 +1,81 @@
+name: Deploy → HF Spaces (all-in-one demo)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/gh_deepagent/**"
+      - "pyproject.toml"
+      - "deploy/huggingface/all-in-one/**"
+      - ".github/workflows/deploy-hf-allinone.yml"
+  workflow_dispatch:
+    inputs:
+      hf_space:
+        description: "Override target Space (org/name)"
+        required: false
+
+concurrency:
+  group: deploy-hf-allinone
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Mirror to ${{ vars.HF_ALLINONE_SPACE || 'huggingface space (configure HF_ALLINONE_SPACE)' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HF_SPACE: ${{ github.event.inputs.hf_space || vars.HF_ALLINONE_SPACE }}
+      HF_USER:  ${{ vars.HF_USER }}
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
+    steps:
+      - name: Sanity-check secrets
+        run: |
+          : "${HF_SPACE:?HF_ALLINONE_SPACE variable required}"
+          : "${HF_USER:?HF_USER variable required}"
+          : "${HF_TOKEN:?HF_TOKEN secret required}"
+
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          path: source
+
+      - name: Stage Space contents
+        working-directory: source
+        run: |
+          mkdir -p ../space/deploy/huggingface/all-in-one ../space/src
+          cp deploy/huggingface/all-in-one/README.md          ../space/README.md
+          cp deploy/huggingface/all-in-one/Dockerfile         ../space/Dockerfile
+          cp deploy/huggingface/all-in-one/supervisord.conf   ../space/deploy/huggingface/all-in-one/supervisord.conf
+          cp deploy/huggingface/all-in-one/router.py          ../space/deploy/huggingface/all-in-one/router.py
+          cp pyproject.toml                                   ../space/pyproject.toml
+          cp -r src/gh_deepagent                              ../space/src/gh_deepagent
+          find ../space/src -name "__pycache__" -type d -prune -exec rm -rf {} +
+          echo "::group::Space tree"
+          find ../space -maxdepth 4 -type f | sort
+          echo "::endgroup::"
+
+      - name: Push to Hugging Face Space
+        working-directory: space
+        run: |
+          set -euo pipefail
+          git init -q -b main
+          git config user.email  "deepagent-bot@users.noreply.github.com"
+          git config user.name   "deepagent-bot"
+          git remote add origin  "https://$HF_USER:$HF_TOKEN@huggingface.co/spaces/$HF_SPACE"
+          git fetch origin main || echo "::notice::empty Space; first deploy"
+          if git rev-parse --verify origin/main >/dev/null 2>&1; then
+            git reset --soft origin/main
+          fi
+          git add -A
+          if git diff --cached --quiet; then
+            echo "::notice::No changes to deploy."
+            exit 0
+          fi
+          SHA="${{ github.sha }}"
+          git commit -m "ci: sync all-in-one demo from ${SHA:0:7}" \
+                     -m "Source: github.com/${{ github.repository }}@$SHA"
+          git push origin main

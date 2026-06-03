@@ -1,0 +1,22 @@
+# Streamlit configuration for Community Cloud.
+# Custom theme + sensible defaults for an admin-style dashboard.
+
+[theme]
+base = "dark"
+primaryColor = "#7c3aed"
+backgroundColor = "#0f1115"
+secondaryBackgroundColor = "#1a1d24"
+textColor = "#e5e7eb"
+font = "sans serif"
+
+[server]
+headless = true
+enableCORS = false
+enableXsrfProtection = true
+
+[browser]
+gatherUsageStats = false
+
+[client]
+toolbarMode = "viewer"
+showErrorDetails = true

@@ -1,0 +1,160 @@
+{
+  "uid": "gh-deepagent",
+  "title": "gh-deepagent",
+  "tags": ["gh-deepagent"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "refresh": "10s",
+  "time": { "from": "now-3h", "to": "now" },
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Queue depth",
+      "id": 1,
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "targets": [{ "expr": "deepagent_queue_depth" }],
+      "options": { "colorMode": "value", "graphMode": "area" }
+    },
+    {
+      "type": "stat",
+      "title": "DLQ size",
+      "id": 2,
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+      "targets": [{ "expr": "deepagent_dlq_size" }],
+      "options": { "colorMode": "value", "graphMode": "area" },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": { "mode": "absolute",
+            "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] }
+        }
+      }
+    },
+    {
+      "type": "stat",
+      "title": "In-progress jobs",
+      "id": 3,
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+      "targets": [{ "expr": "sum(deepagent_jobs_in_progress)" }]
+    },
+    {
+      "type": "stat",
+      "title": "Jobs/hour",
+      "id": 4,
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "targets": [{ "expr": "sum(rate(deepagent_jobs_total[1h])) * 3600" }]
+    },
+    {
+      "type": "timeseries",
+      "title": "Job throughput by status",
+      "id": 5,
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "targets": [
+        { "expr": "sum by (status) (rate(deepagent_jobs_total[5m]))",
+          "legendFormat": "{{status}}" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Job duration (p50 / p95 / p99)",
+      "id": 6,
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "targets": [
+        { "expr": "histogram_quantile(0.5, sum by (le) (rate(deepagent_job_duration_seconds_bucket[5m])))", "legendFormat": "p50" },
+        { "expr": "histogram_quantile(0.95, sum by (le) (rate(deepagent_job_duration_seconds_bucket[5m])))", "legendFormat": "p95" },
+        { "expr": "histogram_quantile(0.99, sum by (le) (rate(deepagent_job_duration_seconds_bucket[5m])))", "legendFormat": "p99" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+    {
+      "type": "barchart",
+      "title": "Tool calls (last 1h)",
+      "id": 7,
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "targets": [
+        { "expr": "sum by (tool) (increase(deepagent_tool_calls_total[1h]))",
+          "legendFormat": "{{tool}}" }
+      ]
+    },
+    {
+      "type": "barchart",
+      "title": "Sub-agent invocations (last 1h)",
+      "id": 8,
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+      "targets": [
+        { "expr": "sum by (subagent) (increase(deepagent_subagent_calls_total[1h]))",
+          "legendFormat": "{{subagent}}" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Tool error rate",
+      "id": 9,
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
+      "targets": [
+        { "expr": "sum by (tool) (rate(deepagent_tool_calls_total{status=\"error\"}[5m]))",
+          "legendFormat": "{{tool}}" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "LLM tokens (in / out) per minute",
+      "id": 10,
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
+      "targets": [
+        { "expr": "sum by (kind) (rate(deepagent_llm_tokens_total[5m])) * 60",
+          "legendFormat": "{{kind}}" }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "LLM spend last 1h (USD)",
+      "id": 11,
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 28 },
+      "targets": [{ "expr": "sum(increase(deepagent_llm_cost_usd_total[1h]))" }],
+      "fieldConfig": { "defaults": { "unit": "currencyUSD", "decimals": 2 } }
+    },
+    {
+      "type": "stat",
+      "title": "LLM spend last 24h (USD)",
+      "id": 12,
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 28 },
+      "targets": [{ "expr": "sum(increase(deepagent_llm_cost_usd_total[24h]))" }],
+      "fieldConfig": { "defaults": { "unit": "currencyUSD", "decimals": 2 } }
+    },
+    {
+      "type": "stat",
+      "title": "Quota rejections last 1h",
+      "id": 13,
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 28 },
+      "targets": [{ "expr": "sum(increase(deepagent_quota_rejections_total[1h]))" }]
+    },
+    {
+      "type": "stat",
+      "title": "LLM calls last 1h",
+      "id": 14,
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 28 },
+      "targets": [{ "expr": "sum(increase(deepagent_llm_calls_total[1h]))" }]
+    },
+    {
+      "type": "timeseries",
+      "title": "LLM spend per model ($/hr)",
+      "id": 15,
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 32 },
+      "targets": [
+        { "expr": "sum by (model) (rate(deepagent_llm_cost_usd_total[5m])) * 3600",
+          "legendFormat": "{{model}}" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "currencyUSD" } }
+    },
+    {
+      "type": "timeseries",
+      "title": "Quota rejections by installation",
+      "id": 16,
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 32 },
+      "targets": [
+        { "expr": "sum by (installation_id) (rate(deepagent_quota_rejections_total[5m]))",
+          "legendFormat": "{{installation_id}}" }
+      ]
+    }
+  ]
+}

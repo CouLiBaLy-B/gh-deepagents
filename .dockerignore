@@ -1,0 +1,38 @@
+# Keep Docker build contexts minimal for HF Space cold-start time.
+.git
+.github
+.venv
+.pytest_cache
+.ruff_cache
+.mypy_cache
+__pycache__
+**/__pycache__
+*.pyc
+*.pyo
+*.pyd
+.tox
+.coverage
+htmlcov
+dist
+build
+*.egg-info
+
+# Test suite (the Spaces don't run it).
+tests/
+
+# Heavy deploy artefacts we never need inside a Space container.
+deploy/grafana
+deploy/prometheus
+deploy/alertmanager
+deploy/tempo
+deploy/Caddyfile
+deploy/systemd-gh-deepagent.service
+deploy/docker-compose.yml
+
+# Local-only files
+.env
+.env.*
+!.env.example
+.deepagents/.state
+*.swp
+.DS_Store

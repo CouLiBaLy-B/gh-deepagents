@@ -1,0 +1,37 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "release-type": "python",
+  "packages": {
+    ".": {
+      "package-name": "gh-deepagent",
+      "extra-files": [
+        {
+          "type": "generic",
+          "path": "src/gh_deepagent/__init__.py"
+        }
+      ],
+      "changelog-sections": [
+        { "type": "feat",     "section": "✨ Features" },
+        { "type": "fix",      "section": "🐛 Bug Fixes" },
+        { "type": "perf",     "section": "⚡ Performance" },
+        { "type": "refactor", "section": "♻️ Refactor" },
+        { "type": "docs",     "section": "📚 Documentation" },
+        { "type": "test",     "section": "✅ Tests" },
+        { "type": "build",    "section": "📦 Build & Dependencies" },
+        { "type": "ci",       "section": "🔧 CI" },
+        { "type": "chore",    "section": "🧹 Chores", "hidden": true },
+        { "type": "style",    "section": "🎨 Style",   "hidden": true }
+      ],
+      "draft": false,
+      "prerelease": false,
+      "bump-minor-pre-major": true,
+      "bump-patch-for-minor-pre-major": true,
+      "include-v-in-tag": true
+    }
+  },
+  "plugins": [
+    {
+      "type": "sentence-case"
+    }
+  ]
+}

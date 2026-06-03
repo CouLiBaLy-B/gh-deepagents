@@ -1,0 +1,91 @@
+name: gh-deepagent
+
+# Place this file in the TARGET repository (.github/workflows/deepagent.yml).
+
+on:
+  issues:
+    types: [opened, labeled]
+  issue_comment:
+    types: [created]
+  pull_request:
+    types: [opened, labeled]
+  workflow_dispatch:
+    inputs:
+      issue_url:
+        description: "Full GitHub issue URL to resolve"
+        required: false
+      instruction:
+        description: "Free-form evolution request"
+        required: false
+      pr_number:
+        description: "PR number to iterate on (with instruction)"
+        required: false
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: deepagent-${{ github.event.issue.number || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  run:
+    # Skip if it's an issues event without our label, or a comment that doesn't start with /deepagent
+    if: >
+      (github.event_name == 'workflow_dispatch') ||
+      (github.event_name == 'issues' &&
+        (contains(github.event.issue.labels.*.name, 'deepagent') ||
+         github.event.label.name == 'deepagent')) ||
+      (github.event_name == 'issue_comment' &&
+        startsWith(github.event.comment.body, '/deepagent')) ||
+      (github.event_name == 'pull_request' &&
+        (contains(github.event.pull_request.labels.*.name, 'deepagent-review') ||
+         github.event.label.name == 'deepagent-review'))
+    runs-on: ubuntu-latest   # use a self-hosted runner if you want Ollama on a GPU box
+    timeout-minutes: 30
+    steps:
+      - name: Checkout gh-deepagent
+        uses: actions/checkout@v4
+        with:
+          repository: YOUR_ORG/gh-deepagent     # <-- change to where you host this project
+          path: agent
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install agent
+        working-directory: agent
+        run: |
+          pip install -e ".[ollama,openai,anthropic]"
+
+      # ----- LLM provider -----
+      # Option A: Anthropic / OpenAI hosted (works on ubuntu-latest)
+      # Add ANTHROPIC_API_KEY or OPENAI_API_KEY as a repo secret.
+      #
+      # Option B: Ollama (recommended on self-hosted runner with GPU)
+      #   - name: Start Ollama
+      #     run: |
+      #       curl -fsSL https://ollama.com/install.sh | sh
+      #       ollama serve &
+      #       sleep 3
+      #       ollama pull qwen2.5-coder:14b
+
+      - name: Run deepagent on event
+        working-directory: agent
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # pick ONE of these:
+          DEEPAGENT_MODEL: ${{ vars.DEEPAGENT_MODEL || 'anthropic:claude-sonnet-4-5' }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OLLAMA_BASE_URL: ${{ vars.OLLAMA_BASE_URL || 'http://localhost:11434' }}
+          DEEPAGENT_WORKDIR: ${{ runner.temp }}/gh-deepagent
+          DEEPAGENT_MAX_TURNS: "40"
+        run: |
+          gh-deepagent github-event \
+            --event-path "$GITHUB_EVENT_PATH" \
+            --event-name "$GITHUB_EVENT_NAME"

@@ -1,0 +1,190 @@
+name: PR preview · HF Space
+
+# For every PR from a trusted contributor (member of the repo) we spin up an
+# ephemeral Hugging Face Space named `<HF_USER>/gh-deepagent-pr-<num>` running
+# the dashboard build of that PR. When the PR is closed we delete the Space.
+#
+# This lets reviewers click a link and play with the UI before merging.
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, closed, labeled]
+
+# pull_request_target runs with write access to repo secrets. To prevent
+# malicious PRs from exfiltrating HF_TOKEN, we gate on:
+#   1. PR author is a repo collaborator (write access), OR
+#   2. PR has the label `preview-ok` applied by a maintainer
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: pr-preview-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  authorize:
+    runs-on: ubuntu-latest
+    outputs:
+      ok: ${{ steps.gate.outputs.ok }}
+    steps:
+      - id: gate
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const labels = pr.labels.map(l => l.name);
+            if (labels.includes("preview-ok")) {
+              core.setOutput("ok", "true"); return;
+            }
+            // Check author permission
+            const {data: perm} = await github.rest.repos.getCollaboratorPermissionLevel({
+              owner: context.repo.owner,
+              repo:  context.repo.repo,
+              username: pr.user.login,
+            });
+            const ok = ["admin", "maintain", "write"].includes(perm.permission);
+            core.setOutput("ok", ok ? "true" : "false");
+            if (!ok) {
+              core.notice(`PR author ${pr.user.login} lacks write access; preview skipped. Apply "preview-ok" label to override.`);
+            }
+
+  delete-on-close:
+    needs: authorize
+    if: github.event.action == 'closed' && needs.authorize.outputs.ok == 'true'
+    runs-on: ubuntu-latest
+    env:
+      HF_USER:  ${{ vars.HF_USER }}
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
+      SPACE: ${{ vars.HF_USER }}/gh-deepagent-pr-${{ github.event.pull_request.number }}
+    steps:
+      - name: Delete preview Space
+        run: |
+          if [ -z "$HF_TOKEN" ] || [ -z "$HF_USER" ]; then
+            echo "::warning::HF credentials not configured; skipping deletion."
+            exit 0
+          fi
+          code=$(curl -s -o /tmp/del -w "%{http_code}" \
+            -X DELETE \
+            -H "Authorization: Bearer $HF_TOKEN" \
+            "https://huggingface.co/api/repos/delete" \
+            -H 'Content-Type: application/json' \
+            -d "{\"name\":\"gh-deepagent-pr-${{ github.event.pull_request.number }}\",\"organization\":\"$HF_USER\",\"type\":\"space\"}")
+          echo "DELETE returned $code"
+          cat /tmp/del || true
+          # 200, 204 or 404 (already gone) are all acceptable.
+          case "$code" in 200|204|404) exit 0 ;; *) exit 1 ;; esac
+
+      - name: Comment on PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner, repo: context.repo.repo,
+              issue_number: ${{ github.event.pull_request.number }},
+              body: "🧹 PR preview Space deleted.",
+            });
+
+  deploy-preview:
+    needs: authorize
+    if: github.event.action != 'closed' && needs.authorize.outputs.ok == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      HF_USER:  ${{ vars.HF_USER }}
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
+      PR:       ${{ github.event.pull_request.number }}
+      SHA:      ${{ github.event.pull_request.head.sha }}
+    steps:
+      - name: Sanity-check secrets
+        run: |
+          : "${HF_USER:?HF_USER required}"
+          : "${HF_TOKEN:?HF_TOKEN required}"
+
+      - uses: actions/checkout@v4
+        with:
+          # We deliberately check out the PR HEAD (not target's tree). The
+          # `authorize` gate above ensures only trusted PRs reach here.
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: source
+
+      - name: Ensure the preview Space exists (idempotent create)
+        run: |
+          SPACE_NAME=gh-deepagent-pr-$PR
+          echo "::group::Create Space $HF_USER/$SPACE_NAME (if missing)"
+          code=$(curl -s -o /tmp/create -w "%{http_code}" \
+            -X POST \
+            -H "Authorization: Bearer $HF_TOKEN" \
+            -H 'Content-Type: application/json' \
+            "https://huggingface.co/api/repos/create" \
+            -d "{
+              \"name\":\"$SPACE_NAME\",
+              \"organization\":\"$HF_USER\",
+              \"type\":\"space\",
+              \"sdk\":\"docker\",
+              \"private\":false,
+              \"hardware\":\"cpu-basic\"
+            }")
+          echo "create returned $code"
+          cat /tmp/create || true
+          # 200/201 = created; 409 = already exists → fine.
+          case "$code" in 200|201|409) ;; *) exit 1 ;; esac
+          echo "::endgroup::"
+
+      - name: Stage Space contents
+        working-directory: source
+        run: |
+          mkdir -p ../space
+          cp deploy/huggingface/dashboard/Dockerfile ../space/Dockerfile
+          # Patch the README to mark this as a preview.
+          sed -e "1,/^---$/{/^title:/c\title: gh-deepagent PR #${{ env.PR }}
+          }" deploy/huggingface/dashboard/README.md > ../space/README.md
+          cp pyproject.toml ../space/pyproject.toml
+          mkdir -p ../space/src
+          cp -r src/gh_deepagent ../space/src/gh_deepagent
+          find ../space -name "__pycache__" -type d -prune -exec rm -rf {} +
+
+      - name: Push to preview Space
+        working-directory: space
+        run: |
+          set -euo pipefail
+          git init -q -b main
+          git config user.email "deepagent-bot@users.noreply.github.com"
+          git config user.name  "deepagent-bot"
+          git remote add origin "https://$HF_USER:$HF_TOKEN@huggingface.co/spaces/$HF_USER/gh-deepagent-pr-$PR"
+          git fetch origin main || true
+          if git rev-parse --verify origin/main >/dev/null 2>&1; then
+            git reset --soft origin/main
+          fi
+          git add -A
+          if git diff --cached --quiet; then
+            echo "::notice::No diff; preview unchanged."
+          else
+            git commit -m "preview: PR #$PR @ ${SHA:0:7}"
+            git push origin main
+          fi
+
+      - name: Comment preview URL on the PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const url = `https://${process.env.HF_USER}-gh-deepagent-pr-${process.env.PR}.hf.space`;
+            const sha = process.env.SHA.slice(0, 7);
+            const marker = "<!-- gh-deepagent-pr-preview -->";
+            const body = `${marker}\n\n🧪 **PR preview ready** → ${url}\n\nBuilt from commit \`${sha}\`. Will be deleted when this PR is closed.`;
+            const {data: comments} = await github.rest.issues.listComments({
+              owner: context.repo.owner, repo: context.repo.repo,
+              issue_number: ${{ env.PR }},
+            });
+            const existing = comments.find(c => c.body && c.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner, repo: context.repo.repo,
+                comment_id: existing.id, body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner, repo: context.repo.repo,
+                issue_number: ${{ env.PR }}, body,
+              });
+            }

@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: pytest (py${{ matrix.python }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+      - run: pip install -e ".[dashboard,webhook,dev]"
+      - run: pytest -q
+
+  lint:
+    name: ruff
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install ruff
+      - run: ruff check src tests || true   # advisory until a config is dialled in
+
+  docker-build:
+    name: Docker build (HF dashboard)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build dashboard image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/huggingface/dashboard/Dockerfile
+          push: false
+          load: false
+          tags: gh-deepagent-dashboard:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Build all-in-one image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/huggingface/all-in-one/Dockerfile
+          push: false
+          load: false
+          tags: gh-deepagent-allinone:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

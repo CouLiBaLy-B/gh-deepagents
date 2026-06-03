@@ -1,0 +1,90 @@
+groups:
+- name: gh-deepagent
+  rules:
+
+  # ----------------------------- queue health -----------------------------
+  - alert: DeepagentDLQNotEmpty
+    expr: deepagent_dlq_size > 0
+    for: 5m
+    labels: { severity: warning, service: gh-deepagent }
+    annotations:
+      summary: "{{ $value }} job(s) in DLQ"
+      description: "Jobs failed all retries and need human review. See /dlq."
+      runbook: "https://example.com/runbooks/deepagent-dlq"
+
+  - alert: DeepagentQueueBacklog
+    expr: deepagent_queue_depth > 20
+    for: 10m
+    labels: { severity: warning, service: gh-deepagent }
+    annotations:
+      summary: "Queue backlog growing ({{ $value }} jobs)"
+      description: "Add workers: `docker compose up -d --scale gh-deepagent-worker=N`."
+
+  - alert: DeepagentQueueStuck
+    expr: deepagent_queue_depth > 0 and sum(deepagent_jobs_in_progress) == 0
+    for: 5m
+    labels: { severity: critical, service: gh-deepagent }
+    annotations:
+      summary: "Queue has work but no worker is processing"
+      description: "Check worker processes and Redis connectivity."
+
+  # ----------------------------- error rate -----------------------------
+  - alert: DeepagentJobFailureRateHigh
+    expr: |
+      sum(rate(deepagent_jobs_total{status=~"failed|dead"}[15m]))
+        / clamp_min(sum(rate(deepagent_jobs_total{status=~"succeeded|failed|dead"}[15m])), 0.001)
+        > 0.20
+    for: 15m
+    labels: { severity: page, service: gh-deepagent }
+    annotations:
+      summary: "> 20% jobs failing over 15 min"
+      description: "Investigate worker logs and recent LLM provider incidents."
+
+  - alert: DeepagentToolErrorSpike
+    expr: |
+      sum by (tool) (rate(deepagent_tool_calls_total{status="error"}[5m])) > 0.5
+    for: 10m
+    labels: { severity: warning, service: gh-deepagent }
+    annotations:
+      summary: "Tool {{ $labels.tool }} error rate > 0.5/s"
+      description: "Recent change or external dependency outage."
+
+  # ----------------------------- latency -----------------------------
+  - alert: DeepagentJobP95SlowdownExtreme
+    expr: |
+      histogram_quantile(0.95,
+        sum by (le) (rate(deepagent_job_duration_seconds_bucket[10m]))) > 900
+    for: 15m
+    labels: { severity: warning, service: gh-deepagent }
+    annotations:
+      summary: "p95 job duration > 15 min"
+      description: "Jobs taking far too long — likely model regression or runaway agent."
+
+  # ----------------------------- cost -----------------------------
+  - alert: DeepagentLLMSpendBurst
+    expr: |
+      sum(increase(deepagent_llm_cost_usd_total[1h])) > 20
+    for: 5m
+    labels: { severity: warning, service: gh-deepagent }
+    annotations:
+      summary: "LLM spend > $20 in 1h"
+      description: "Possible runaway loop or quota misconfiguration. Investigate."
+
+  # ----------------------------- quota -----------------------------
+  - alert: DeepagentQuotaRejectionsSpike
+    expr: |
+      sum by (installation_id) (rate(deepagent_quota_rejections_total[5m])) > 0.5
+    for: 10m
+    labels: { severity: info, service: gh-deepagent }
+    annotations:
+      summary: "Installation {{ $labels.installation_id }} hitting quota repeatedly"
+      description: "Consider raising the limit via DEEPAGENT_QUOTA_OVERRIDES or contact the user."
+
+  # ----------------------------- infra -----------------------------
+  - alert: DeepagentWebhookDown
+    expr: up{service="gh-deepagent"} == 0
+    for: 2m
+    labels: { severity: page, service: gh-deepagent }
+    annotations:
+      summary: "Webhook service is down"
+      description: "/healthz unreachable for 2 min."
