@@ -87,7 +87,17 @@ def _render_login() -> None:
         try:
             flow = GitHubDeviceFlow()
         except DeviceFlowError as e:
-            st.error(str(e))
+            st.info(
+                "🔧 **GitHub OAuth Device Flow isn\'t configured yet.**\n\n"
+                "To enable one-click GitHub sign-in:\n"
+                "1. Create a GitHub OAuth App with *Device Flow* enabled "
+                "([instructions](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/creating-an-oauth-app))\n"
+                "2. Set `DEEPAGENT_OAUTH_CLIENT_ID` in your Space settings → "
+                "Variables and secrets.\n\n"
+                "👉 **In the meantime, use the \"Paste token\" tab** with a "
+                "GitHub Personal Access Token (`repo` scope)."
+            )
+            st.caption(f"_Raw error: {e}_")
             return
 
         bundle = st.session_state.get(SESSION_DEVICE_KEY)

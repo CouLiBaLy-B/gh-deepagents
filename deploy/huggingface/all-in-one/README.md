@@ -24,11 +24,15 @@ For production, deploy the components separately on real infrastructure
 | Process     | Port (internal) | Exposed to public? |
 |-------------|----------------|--------------------|
 | redis-server| 6379           | no                 |
-| webhook     | 8080           | no (proxied)       |
+| webhook     | 8080           | no (loopback only) |
 | worker (×1) | —              | no                 |
 | streamlit   | 7860           | **yes** ← Space root |
 
-The dashboard reaches the webhook via `http://localhost:8080` (loopback).
+The dashboard reaches the webhook via `http://127.0.0.1:8080` (loopback).
+
+⚠️ **GitHub cannot call this Space's webhook directly** — it isn't exposed.
+This Space is for *trying the UI*, not for receiving real GitHub events.
+For production, deploy webhook + workers on a real VPS (see `docs/QUEUE_AND_OBSERVABILITY.md`).
 
 ## Required Space secrets
 
