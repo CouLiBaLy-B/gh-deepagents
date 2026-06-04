@@ -23,12 +23,12 @@ permissions:
 
 jobs:
   deploy:
-    name: Mirror to Hugging Face Space
+    name: Mirror to ${{ vars.HF_ALLINONE_SPACE || 'huggingface space (configure HF_ALLINONE_SPACE)' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
-      HF_SPACE: ${{ github.event.inputs.hf_space || secrets.HF_ALLINONE_SPACE }}
-      HF_USER:  ${{ secrets.HF_USER }}
+      HF_SPACE: ${{ github.event.inputs.hf_space || vars.HF_ALLINONE_SPACE }}
+      HF_USER:  ${{ vars.HF_USER }}
       HF_TOKEN: ${{ secrets.HF_TOKEN }}
     steps:
       - name: Sanity-check secrets
