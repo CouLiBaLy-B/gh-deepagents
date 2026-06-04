@@ -40,3 +40,27 @@ def test_build_model_openrouter_constructs_chatopenai(monkeypatch):
         or str(getattr(getattr(model, "client", None), "base_url", "") or "")
     )
     assert OPENROUTER_BASE_URL in base
+
+
+def test_missing_extra_produces_actionable_error(monkeypatch):
+    """If langchain_ollama isn't installed, build_model should explain how to fix it."""
+    monkeypatch.setenv("DEEPAGENT_MODEL", "ollama:qwen2.5-coder:14b")
+    # Pretend the ollama package isn't installed by removing it from sys.modules
+    # and inserting a fake that fails on import.
+    import sys, importlib, builtins
+
+    real_import = builtins.__import__
+    def fake_import(name, *a, **kw):
+        if name == "langchain_ollama":
+            raise ImportError("no ollama for you")
+        return real_import(name, *a, **kw)
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+
+    # Drop any cached settings so DEEPAGENT_MODEL is re-read.
+    from gh_deepagent.config import get_settings
+    get_settings.cache_clear()
+
+    from gh_deepagent.models import build_model
+    import pytest
+    with pytest.raises(RuntimeError, match="langchain-ollama"):
+        build_model()

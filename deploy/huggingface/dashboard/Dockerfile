@@ -15,7 +15,7 @@ WORKDIR /home/user/app
 COPY --chown=user pyproject.toml README.md ./
 COPY --chown=user src ./src
 RUN pip install --no-cache-dir --upgrade pip \
- && pip install --no-cache-dir -e ".[dashboard,webhook]"
+ && pip install --no-cache-dir -e ".[dashboard,webhook,anthropic,openai,ollama,google,groq]"
 
 USER user
 ENV HOME=/home/user \

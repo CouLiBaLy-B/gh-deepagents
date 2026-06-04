@@ -49,7 +49,13 @@ def _build_openrouter(model_name: str, **overrides: Any):
     Recommended HTTP headers (`HTTP-Referer` + `X-Title`) help OpenRouter rank
     your traffic; we set them from env vars when present.
     """
-    from langchain_openai import ChatOpenAI
+    try:
+        from langchain_openai import ChatOpenAI
+    except ImportError as e:
+        raise RuntimeError(
+            "Provider 'openrouter' selected but the langchain-openai package "
+            "isn't installed. Install with: `pip install langchain-openai`."
+        ) from e
 
     api_key = os.getenv("OPENROUTER_API_KEY", "")
     if not api_key:
@@ -81,8 +87,16 @@ def build_model(model_spec: str | None = None, **overrides: Any):
     spec = model_spec or settings.model
 
     if spec.startswith("ollama:"):
-        from langchain_ollama import ChatOllama
-
+        try:
+            from langchain_ollama import ChatOllama
+        except ImportError as e:
+            raise RuntimeError(
+                "Provider 'ollama' selected (DEEPAGENT_MODEL=" + spec + ") but "
+                "the langchain-ollama package isn't installed. Install with: "
+                "`pip install langchain-ollama` (or `pip install -e .[ollama]` "
+                "from the project root). On Hugging Face Spaces, redeploy after "
+                "rebasing on the latest Dockerfile which includes all providers."
+            ) from e
         _, model_name = spec.split("ollama:", 1)
         params = dict(
             model=model_name,
@@ -99,4 +113,18 @@ def build_model(model_spec: str | None = None, **overrides: Any):
         return _attach_callbacks(_build_openrouter(model_name, **overrides))
 
     # Everything else → LangChain's init_chat_model (handles anthropic, openai, …).
-    return _attach_callbacks(init_chat_model(spec, temperature=0.0, **overrides))
+    try:
+        return _attach_callbacks(init_chat_model(spec, temperature=0.0, **overrides))
+    except ImportError as e:
+        provider = spec.split(":", 1)[0] if ":" in spec else spec
+        hint_pkg = {
+            "anthropic":    "langchain-anthropic",
+            "openai":       "langchain-openai",
+            "google_genai": "langchain-google-genai",
+            "groq":         "langchain-groq",
+        }.get(provider, f"the package for provider '{provider}'")
+        raise RuntimeError(
+            f"Couldn't load provider '{provider}' (DEEPAGENT_MODEL={spec}). "
+            f"Install with: `pip install {hint_pkg}`. On Hugging Face Spaces, "
+            "redeploy after rebasing on the latest Dockerfile."
+        ) from e

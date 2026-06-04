@@ -15,7 +15,7 @@ WORKDIR /home/user/app
 COPY --chown=user pyproject.toml README.md ./
 COPY --chown=user src ./src
 RUN pip install --no-cache-dir --upgrade pip \
- && pip install --no-cache-dir -e ".[dashboard,webhook,anthropic,openai]"
+ && pip install --no-cache-dir -e ".[dashboard,webhook,anthropic,openai,ollama,google,groq]"
 
 COPY --chown=user deploy/huggingface/all-in-one/supervisord.conf /etc/supervisord.conf
 
