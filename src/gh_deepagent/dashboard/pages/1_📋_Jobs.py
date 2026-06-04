@@ -6,7 +6,9 @@ import json
 import streamlit as st
 
 from gh_deepagent.dashboard.api import APIError
-from gh_deepagent.dashboard.auth_ui import render_user_badge, require_login
+from gh_deepagent.dashboard.auth_ui import (
+    render_user_badge, require_backend, require_login,
+)
 
 
 st.set_page_config(page_title="Jobs · gh-deepagent", page_icon="📋", layout="wide")
@@ -14,6 +16,7 @@ st.title("📋 Job inspector")
 
 api, _user = require_login()
 render_user_badge()
+require_backend("Job inspector")
 
 # ----- Look up a job -----
 job_id = st.text_input("Job ID", value=st.query_params.get("id", ""),

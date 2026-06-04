@@ -4,7 +4,9 @@ from __future__ import annotations
 import streamlit as st
 
 from gh_deepagent.dashboard.api import APIError
-from gh_deepagent.dashboard.auth_ui import render_user_badge, require_login
+from gh_deepagent.dashboard.auth_ui import (
+    render_user_badge, require_backend, require_login,
+)
 
 
 st.set_page_config(page_title="Roles · gh-deepagent", page_icon="👥", layout="wide")
@@ -14,6 +16,7 @@ st.caption("Grant **viewer** / **operator** / **admin** roles on a per-installat
 
 api, user = require_login()
 render_user_badge()
+require_backend("Role management")
 
 try:
     installations = api.installations()

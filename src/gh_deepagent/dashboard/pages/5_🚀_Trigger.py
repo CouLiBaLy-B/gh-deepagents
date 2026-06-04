@@ -10,7 +10,9 @@ import os
 
 import streamlit as st
 
-from gh_deepagent.dashboard.auth_ui import render_user_badge, require_login
+from gh_deepagent.dashboard.auth_ui import (
+    render_user_badge, require_backend, require_login,
+)
 
 
 st.set_page_config(page_title="Trigger · gh-deepagent", page_icon="🚀", layout="wide")
@@ -23,6 +25,7 @@ st.caption(
 
 _api, user = require_login()
 render_user_badge()
+require_backend("In-process trigger")
 if not user.get("is_admin"):
     st.error(
         "Triggering jobs through the dashboard is restricted to admins. "
