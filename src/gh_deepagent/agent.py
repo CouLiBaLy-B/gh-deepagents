@@ -44,41 +44,20 @@ from .prompts import (
 from .tools import make_toolbox
 
 
-def _instrument_tools(tools: list) -> list:
-    """Wrap every tool's `func` with Prometheus counters, duration histograms,
-    AND OpenTelemetry spans (no-op when OTel is disabled).
+
+
+
+def _review_response_format():
+    """Return the Pydantic schema for the reviewer's structured output.
+
+    Wrapped in a function so importing this module never fails if the
+    review_schema dependencies (Pydantic) aren't available at import time.
     """
-    from .observability.metrics import TOOL_CALLS, TOOL_DURATION
-    from .observability.tracing import span
-    import functools, time as _time
-
-    out = []
-    for t in tools:
-        if getattr(t, "_gh_instrumented", False):
-            out.append(t); continue
-        orig = t.func if hasattr(t, "func") else None
-        if orig is None:
-            out.append(t); continue
-        name = t.name
-
-        @functools.wraps(orig)
-        def wrapper(*a, _orig=orig, _name=name, **kw):
-            t0 = _time.perf_counter()
-            with span(f"tool.{_name}", **{"tool.name": _name}):
-                try:
-                    r = _orig(*a, **kw)
-                    TOOL_CALLS.labels(_name, "ok").inc()
-                    return r
-                except Exception:
-                    TOOL_CALLS.labels(_name, "error").inc()
-                    raise
-                finally:
-                    TOOL_DURATION.labels(_name).observe(_time.perf_counter() - t0)
-
-        t.func = wrapper
-        t._gh_instrumented = True   # type: ignore[attr-defined]
-        out.append(t)
-    return out
+    try:
+        from .review_schema import ReviewReport
+        return ReviewReport
+    except Exception:
+        return None
 
 
 def build_agent(
@@ -96,7 +75,7 @@ def build_agent(
     sandbox.
     """
     model = build_model()
-    handle = get_backend_handle(repo_path, kind=backend_kind)
+    handle = get_backend_handle(repo_path, kind=backend_kind, repo_full_name=repo_full_name)
     toolbox = make_toolbox(
         repo_path=repo_path,
         repo_full_name=repo_full_name,
@@ -105,9 +84,8 @@ def build_agent(
         base_branch=base_branch,
         existing_branch=existing_branch,
     )
-    # Wrap every tool list with Prometheus instrumentation (idempotent).
-    for attr in ("read_only", "edit", "migrate", "perf", "i18n", "finalize"):
-        setattr(toolbox, attr, _instrument_tools(getattr(toolbox, attr)))
+    # Tool/model instrumentation now lives in MetricsMiddleware (wired below)
+    # — no need to monkey-patch each tool function anymore.
 
     subagents = [
         {
@@ -150,10 +128,13 @@ def build_agent(
             "name": "reviewer",
             "description": (
                 "Critical code review of the current diff. READ-ONLY. Delegate "
-                "right before finalize_patch."
+                "right before finalize_patch. Returns a structured ReviewReport."
             ),
             "system_prompt": REVIEWER_PROMPT,
             "tools": toolbox.for_role("reviewer"),
+            # Structured output via Pydantic — falls back to free-form text
+            # if the installed deepagents version doesn't honour the field.
+            "response_format": _review_response_format(),
         },
         {
             "name": "security",
@@ -215,11 +196,40 @@ def build_agent(
         },
     ]
 
+    # --- Layered-memory wiring ---------------------------------------
+    # When the backend is layered (handle.memory_path set), provide the
+    # StoreBackend with an InMemoryStore and tell the agent where to look.
+    extra_kwargs: dict = {}
+    system_prompt = MAIN_PROMPT
+    if handle.memory_path:
+        try:
+            from langgraph.store.memory import InMemoryStore
+            extra_kwargs["store"] = InMemoryStore()
+        except Exception:
+            pass
+        system_prompt = (
+            MAIN_PROMPT
+            + f"\n\n## Persistent memory\n\n"
+            + f"You have a long-term memory area at `{handle.memory_path}`. "
+            + f"It persists across jobs on this repo (conventions, past "
+            + f"decisions, 'do not touch' notes). Read it at the start of "
+            + f"every job (`ls {handle.memory_path}` then `read_file`) and "
+            + f"WRITE durable observations there with `write_file` (NEVER use "
+            + f"it as scratch space — use the working dir for that)."
+        )
+
+    # MetricsMiddleware is appended to the default deep-agent stack and runs
+    # on every tool + model call (sync and async). See observability/middleware.py.
+    from .observability.middleware import MetricsMiddleware
+    user_middleware = [MetricsMiddleware()]
+
     agent = create_deep_agent(
         model=model,
         tools=toolbox.for_role("lead"),
-        system_prompt=MAIN_PROMPT,
+        system_prompt=system_prompt,
         backend=handle.backend,
         subagents=subagents,
+        middleware=user_middleware,
+        **extra_kwargs,
     )
     return agent, handle

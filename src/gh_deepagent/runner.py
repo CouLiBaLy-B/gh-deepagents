@@ -253,7 +253,12 @@ def iterate_pr(
 
 
 def review_pr(repo_full_name: str, pr_number: int, backend: Optional[str] = None) -> RunResult:
-    """Post an automated code-review comment on a PR."""
+    """Post an automated code-review comment on a PR.
+
+    Tries to render a structured ReviewReport from the reviewer sub-agent's
+    response_format output; falls back to the agent's raw final message if the
+    schema parse fails (older deepagents / unstructured run).
+    """
     import urllib.request
     repo_full_name = normalize_repo_full_name(repo_full_name)
     settings = get_settings()
@@ -270,11 +275,63 @@ def review_pr(repo_full_name: str, pr_number: int, backend: Optional[str] = None
     try:
         prompt = (
             f"Review the following diff for PR #{pr_number} of {repo_full_name}.\n\n"
-            f"Delegate to the `reviewer` sub-agent and return ONLY the Markdown review.\n\n"
+            f"Delegate to the `reviewer` sub-agent. Return its structured "
+            f"ReviewReport (or the most precise markdown you can if structured "
+            f"output isn't available).\n\n"
             f"```diff\n{diff_text[:30000]}\n```"
         )
-        text = _stream(agent, {"messages": [{"role": "user", "content": prompt}]}, settings.max_turns)
-        pr.create_issue_comment(f"### 🤖 gh-deepagent review\n\n{text}")
-        return RunResult(ok=True, summary=text, pr_url=pr.html_url)
+        result = _stream_with_structured(
+            agent,
+            {"messages": [{"role": "user", "content": prompt}]},
+            settings.max_turns,
+        )
+        body = _render_review_body(result)
+        pr.create_issue_comment(body)
+        return RunResult(ok=True, summary=body, pr_url=pr.html_url)
     finally:
         handle.cleanup()
+
+
+def _stream_with_structured(agent, initial_input: dict, max_turns: int):
+    """Like _stream() but also captures `structured_response` from the final state."""
+    from .observability.logging_setup import get_logger
+    logger = get_logger("agent.stream")
+
+    final_text = ""
+    structured = None
+    turns = 0
+    for chunk in agent.stream(initial_input, config={"recursion_limit": max_turns * 4}):
+        turns += 1
+        for node, payload in chunk.items():
+            if isinstance(payload, dict):
+                if "structured_response" in payload and payload["structured_response"] is not None:
+                    structured = payload["structured_response"]
+                if "messages" in payload:
+                    msg = payload["messages"][-1]
+                    content = getattr(msg, "content", "") or ""
+                    if getattr(msg, "type", "?") == "ai" and content:
+                        final_text = content
+        if turns >= max_turns:
+            logger.warning("max turns hit", turns=turns)
+            break
+    return {"text": final_text, "structured": structured}
+
+
+def _render_review_body(result: dict) -> str:
+    """Choose the prettiest rendering we can for the GitHub comment."""
+    structured = result.get("structured")
+    if structured is not None:
+        try:
+            from .review_schema import ReviewReport, render_report_markdown
+            # `structured` might already be a ReviewReport (Pydantic), a dict,
+            # or another model instance — normalise.
+            if isinstance(structured, ReviewReport):
+                return render_report_markdown(structured)
+            if hasattr(structured, "model_dump"):
+                return render_report_markdown(ReviewReport.model_validate(structured.model_dump()))
+            if isinstance(structured, dict):
+                return render_report_markdown(ReviewReport.model_validate(structured))
+        except Exception:
+            pass  # fall through to raw text
+    text = result.get("text") or "(no review produced)"
+    return f"### 🤖 gh-deepagent review\n\n{text}"
