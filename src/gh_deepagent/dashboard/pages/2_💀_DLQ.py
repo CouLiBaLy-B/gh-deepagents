@@ -4,7 +4,9 @@ from __future__ import annotations
 import streamlit as st
 
 from gh_deepagent.dashboard.api import APIError
-from gh_deepagent.dashboard.auth_ui import render_user_badge, require_login
+from gh_deepagent.dashboard.auth_ui import (
+    render_user_badge, require_backend, require_login,
+)
 
 
 st.set_page_config(page_title="DLQ · gh-deepagent", page_icon="💀", layout="wide")
@@ -13,6 +15,7 @@ st.caption("Jobs that exhausted all retries. Requeue once you've fixed the root 
 
 api, user = require_login()
 render_user_badge()
+require_backend("DLQ")
 if not user.get("is_admin"):
     st.error("You need admin privileges to view the DLQ.")
     st.stop()

@@ -4,7 +4,9 @@ from __future__ import annotations
 import streamlit as st
 
 from gh_deepagent.dashboard.api import APIError
-from gh_deepagent.dashboard.auth_ui import render_user_badge, require_login
+from gh_deepagent.dashboard.auth_ui import (
+    is_standalone, render_user_badge, require_login,
+)
 
 
 st.set_page_config(page_title="Installations · gh-deepagent", page_icon="🏢", layout="wide")
@@ -13,6 +15,21 @@ st.caption("Inspect quota usage for installations you have access to on GitHub."
 
 api, user = require_login()
 render_user_badge()
+
+if is_standalone():
+    st.info(
+        "Standalone mode: quota usage is tracked by the backend, which isn't "
+        "reachable. Showing the raw list of installations you can access on "
+        "GitHub instead."
+    )
+    iids = sorted(user.get("installation_ids") or [])
+    if not iids:
+        st.warning("You don't have any installation visible.")
+    else:
+        for iid in iids:
+            st.markdown(f"- installation `#{iid}`")
+    st.stop()
+
 
 iids = sorted(user.get("installation_ids") or [])
 if user.get("is_admin"):
