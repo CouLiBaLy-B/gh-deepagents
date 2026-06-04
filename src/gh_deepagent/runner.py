@@ -17,7 +17,7 @@ from rich.console import Console
 
 from .agent import build_agent
 from .config import get_settings
-from .github_client import GitHubOps, IssueRef
+from .github_client import GitHubOps, IssueRef, normalize_repo_full_name
 
 console = Console()
 
@@ -149,6 +149,7 @@ def evolve_code(
     backend: Optional[str] = None,
 ) -> RunResult:
     """Apply a free-form evolution request to the repo."""
+    repo_full_name = normalize_repo_full_name(repo_full_name)
     settings = get_settings()
     settings.assert_ready()
 
@@ -191,6 +192,7 @@ def iterate_pr(
 
     Triggered by `/deepagent <instruction>` on a PR comment, or via CLI.
     """
+    repo_full_name = normalize_repo_full_name(repo_full_name)
     settings = get_settings()
     settings.assert_ready()
     gh = GitHubOps()
@@ -253,6 +255,7 @@ def iterate_pr(
 def review_pr(repo_full_name: str, pr_number: int, backend: Optional[str] = None) -> RunResult:
     """Post an automated code-review comment on a PR."""
     import urllib.request
+    repo_full_name = normalize_repo_full_name(repo_full_name)
     settings = get_settings()
     settings.assert_ready()
     gh = GitHubOps()
