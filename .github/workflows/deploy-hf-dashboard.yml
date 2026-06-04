@@ -27,7 +27,7 @@ permissions:
 
 jobs:
   deploy:
-    name: Mirror to ${{ secrets.HF_DASHBOARD_SPACE || 'huggingface space (configure HF_DASHBOARD_SPACE)' }}
+    name: Mirror to Hugging Face Space
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
