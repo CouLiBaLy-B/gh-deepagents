@@ -54,8 +54,12 @@ render_user_badge()
 
 # ---------- HOME page ----------
 st.title("Overview")
-st.caption(f"Signed in as **{user['login']}** — "
-           f"{'admin (sees all)' if user.get('is_admin') else f'{len(user.get(\"installation_ids\") or [])} installation(s)'}.")
+if user.get("is_admin"):
+    _scope = "admin (sees all)"
+else:
+    _n = len(user.get("installation_ids") or [])
+    _scope = f"{_n} installation(s)"
+st.caption(f"Signed in as **{user['login']}** — {_scope}.")
 
 # For admins, show the global Prometheus state. For users, build KPIs from
 # their own jobs (which are already scoped server-side).
