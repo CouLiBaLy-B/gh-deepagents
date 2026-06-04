@@ -50,7 +50,6 @@ jobs:
           cp deploy/huggingface/all-in-one/README.md          ../space/README.md
           cp deploy/huggingface/all-in-one/Dockerfile         ../space/Dockerfile
           cp deploy/huggingface/all-in-one/supervisord.conf   ../space/deploy/huggingface/all-in-one/supervisord.conf
-          cp deploy/huggingface/all-in-one/router.py          ../space/deploy/huggingface/all-in-one/router.py
           cp pyproject.toml                                   ../space/pyproject.toml
           cp -r src/gh_deepagent                              ../space/src/gh_deepagent
           find ../space/src -name "__pycache__" -type d -prune -exec rm -rf {} +
