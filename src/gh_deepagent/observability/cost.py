@@ -47,6 +47,19 @@ PRICE_CATALOG: dict[str, dict[str, float]] = {
     # Google
     "google_genai:gemini-2.5-pro": {"input": 1.25,  "output": 10.00},
     "google_genai:gemini-2.5-flash": {"input": 0.075, "output": 0.30},
+    # OpenRouter — they expose hundreds of models; we ship the most common ones
+    # at upstream prices. Anything else falls through to the openrouter:* wildcard
+    # at $0 (tokens still counted; check openrouter.ai/usage for the real bill).
+    "openrouter:anthropic/claude-sonnet-4-5":  {"input": 3.00,  "output": 15.00},
+    "openrouter:anthropic/claude-haiku-4":     {"input": 0.80,  "output": 4.00},
+    "openrouter:openai/gpt-4o":                {"input": 2.50,  "output": 10.00},
+    "openrouter:openai/gpt-4o-mini":           {"input": 0.15,  "output": 0.60},
+    "openrouter:openai/gpt-4.1-mini":          {"input": 0.40,  "output": 1.60},
+    "openrouter:google/gemini-2.5-flash":      {"input": 0.075, "output": 0.30},
+    "openrouter:google/gemini-2.5-pro":        {"input": 1.25,  "output": 10.00},
+    "openrouter:meta-llama/llama-3.3-70b-instruct": {"input": 0.59, "output": 0.79},
+    "openrouter:mistralai/mistral-large-latest":    {"input": 2.00, "output": 6.00},
+    "openrouter:*": {"input": 0.0, "output": 0.0},
     # Local — counted, not billed
     "ollama:*":   {"input": 0.0, "output": 0.0},
     "vllm:*":     {"input": 0.0, "output": 0.0},
