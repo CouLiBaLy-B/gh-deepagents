@@ -153,3 +153,49 @@ def _parse_author(s: str) -> tuple[str, str]:
     if not m:
         return s.strip(), "bot@deepagent"
     return m.group(1).strip(), m.group(2).strip()
+
+# ---------------------------------------------------------------- normaliser
+
+# Accepts:  owner/repo
+#           https://github.com/owner/repo
+#           https://github.com/owner/repo.git
+#           git@github.com:owner/repo.git
+#           https://x-access-token:TOK@github.com/owner/repo[.git]
+_REPO_RE = re.compile(
+    r"""^(?:
+        (?:https?://(?:[^@/]+@)?github\.com/)
+        |
+        (?:git@github\.com:)
+    )?
+    (?P<owner>[A-Za-z0-9][A-Za-z0-9-]*)
+    /
+    (?P<repo>[A-Za-z0-9._-]+?)
+    (?:\.git)?
+    /?$""",
+    re.VERBOSE,
+)
+
+
+def normalize_repo_full_name(value: str) -> str:
+    """Normalise any reasonable repo reference to ``owner/repo``.
+
+    Raises :class:`ValueError` if the value clearly isn't a GitHub repo ref.
+    """
+    if not value or not isinstance(value, str):
+        raise ValueError(f"empty repo reference: {value!r}")
+    s = value.strip()
+    # If it has multiple URL-like substrings (user pasted "https://...https://..."),
+    # keep only the trailing one.
+    if s.count("https://") > 1 or s.count("http://") > 1:
+        # Take the segment after the last protocol marker.
+        for marker in ("https://", "http://"):
+            if marker in s:
+                s = marker + s.rsplit(marker, 1)[1]
+    m = _REPO_RE.match(s)
+    if not m:
+        raise ValueError(
+            f"Not a valid GitHub repo reference: {value!r}. "
+            "Expected formats: 'owner/repo', a full https URL, or an ssh URL."
+        )
+    return f"{m['owner']}/{m['repo']}"
+
