@@ -54,9 +54,9 @@ jobs:
     if: github.event.action == 'closed' && needs.authorize.outputs.ok == 'true'
     runs-on: ubuntu-latest
     env:
-      HF_USER:  ${{ vars.HF_USER }}
+      HF_USER:  ${{ secrets.HF_USER }}
       HF_TOKEN: ${{ secrets.HF_TOKEN }}
-      SPACE: ${{ vars.HF_USER }}/gh-deepagent-pr-${{ github.event.pull_request.number }}
+      SPACE: ${{ secrets.HF_USER }}/gh-deepagent-pr-${{ github.event.pull_request.number }}
     steps:
       - name: Delete preview Space
         run: |
@@ -91,7 +91,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
-      HF_USER:  ${{ vars.HF_USER }}
+      HF_USER:  ${{ secrets.HF_USER }}
       HF_TOKEN: ${{ secrets.HF_TOKEN }}
       PR:       ${{ github.event.pull_request.number }}
       SHA:      ${{ github.event.pull_request.head.sha }}
