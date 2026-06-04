@@ -11,8 +11,8 @@ from typing import Optional
 
 import streamlit as st
 
-from .api import APIError, WebhookAPI
-from .oauth import DeviceFlowError, GitHubDeviceFlow
+from gh_deepagent.dashboard.api import APIError, WebhookAPI
+from gh_deepagent.dashboard.oauth import DeviceFlowError, GitHubDeviceFlow
 
 
 SESSION_TOKEN_KEY = "deepagent.token"

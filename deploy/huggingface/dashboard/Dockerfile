@@ -20,6 +20,7 @@ RUN pip install --no-cache-dir --upgrade pip \
 USER user
 ENV HOME=/home/user \
     PATH=/home/user/.local/bin:$PATH \
+    PYTHONPATH=/home/user/app/src \
     PYTHONUNBUFFERED=1 \
     STREAMLIT_SERVER_HEADLESS=true \
     STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
@@ -29,6 +30,4 @@ EXPOSE 7860
 # HF routes public traffic to app_port (7860). The dashboard reads
 # DEEPAGENT_API_URL from the env (set in Space Settings → Variables).
 CMD ["streamlit", "run", "src/gh_deepagent/dashboard/app.py", \
-     "--server.address=0.0.0.0", "--server.port=7860", \
-     "--server.enableCORS=false", \
-     "--server.enableXsrfProtection=true"]
+     "--server.address=0.0.0.0", "--server.port=7860"]
