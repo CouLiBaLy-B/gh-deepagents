@@ -1,13 +1,19 @@
 """Streamlit entrypoint — multi-page, multi-tenant admin dashboard."""
 from __future__ import annotations
 
+import datetime as _dt
 import os
 import time
+from collections import Counter
 
 import streamlit as st
 
 from gh_deepagent.dashboard.api import APIError, parse_prometheus, sum_by, total
-from gh_deepagent.dashboard.auth_ui import render_user_badge, require_login
+from gh_deepagent.dashboard.auth_ui import (
+    is_standalone,
+    render_user_badge,
+    require_login,
+)
 
 
 st.set_page_config(
@@ -30,6 +36,7 @@ with st.sidebar:
     )
     if base != st.session_state.get("api_base"):
         st.session_state["api_base"] = base
+        st.session_state.pop("_backend_probed", None)
     st.session_state.setdefault("autorefresh", True)
     st.session_state["autorefresh"] = st.toggle(
         "Auto-refresh (10s)", value=st.session_state["autorefresh"]
@@ -41,15 +48,29 @@ api, user = require_login()
 # Sidebar widgets that depend on being logged in.
 with st.sidebar:
     st.divider()
-    try:
-        h = api.healthz()
-        if h.get("status") == "ok":
-            st.success(f"✅ Healthy · queue {h.get('queue_depth', '?')} · DLQ {h.get('dead_letter', '?')}")
-        else:
-            st.warning(f"⚠️ Degraded · {h}")
-    except APIError as e:
-        st.error(f"❌ Unreachable: {e}")
+    if is_standalone():
+        st.warning("🌐 Standalone mode (no backend)")
+    else:
+        try:
+            h = api.healthz()
+            if h.get("status") == "ok":
+                st.success(
+                    f"✅ Healthy · queue {h.get('queue_depth', '?')} · "
+                    f"DLQ {h.get('dead_letter', '?')}"
+                )
+            else:
+                st.warning(f"⚠️ Degraded · {h}")
+        except APIError as e:
+            st.error(f"❌ Unreachable: {e}")
 render_user_badge()
+
+
+# ---------- helpers ----------
+
+def _fmt_ts(ts):
+    if not ts:
+        return "—"
+    return _dt.datetime.fromtimestamp(float(ts)).strftime("%Y-%m-%d %H:%M:%S")
 
 
 # ---------- HOME page ----------
@@ -61,9 +82,26 @@ else:
     _scope = f"{_n} installation(s)"
 st.caption(f"Signed in as **{user['login']}** — {_scope}.")
 
-# For admins, show the global Prometheus state. For users, build KPIs from
-# their own jobs (which are already scoped server-side).
-if user.get("is_admin"):
+if is_standalone():
+    st.info(
+        "🌐 **Standalone mode** — you're signed in directly against GitHub. "
+        "Job / queue / cost data lives in a backend that isn't reachable from "
+        "this Space. Configure `DEEPAGENT_API_URL` in the sidebar to point at "
+        "your webhook, or deploy the all-in-one demo Space for a self-contained "
+        "experience."
+    )
+    st.subheader("Your GitHub App installations")
+    iids = user.get("installation_ids") or []
+    if iids:
+        for iid in iids[:50]:
+            st.markdown(f"- installation `#{iid}`")
+    else:
+        st.caption(
+            "You don't have access to any installation of a configured "
+            "gh-deepagent GitHub App. Install one to see your scoped data here."
+        )
+
+elif user.get("is_admin"):
     try:
         metrics = parse_prometheus(api.metrics_raw())
     except APIError as e:
@@ -100,14 +138,12 @@ if user.get("is_admin"):
             st.info("No sub-agent calls yet.")
 
 else:
-    # Tenant view — build KPIs from /jobs (scoped server-side).
     try:
         my_jobs = api.list_jobs(limit_per_install=50)
     except APIError as e:
         st.error(f"Failed to list jobs: {e}")
         st.stop()
 
-    from collections import Counter
     statuses = Counter(j["status"] for j in my_jobs)
     k1, k2, k3, k4 = st.columns(4)
     k1.metric("Recent jobs", len(my_jobs))
@@ -129,21 +165,11 @@ else:
             "Status": j["status"],
             "ID": j["id"],
         } for j in my_jobs[:50]])
-        st.dataframe(df, use_container_width=True, hide_index=True,
-                     column_config={"ID": st.column_config.LinkColumn(
-                         "Inspect", display_text="View",
-                         help="Open job inspector",
-                     )} if False else None)
+        st.dataframe(df, use_container_width=True, hide_index=True)
         st.caption("Open a job by copying its ID into the **Jobs** page.")
 
 
-if st.session_state.get("autorefresh"):
+# Auto-refresh — but not in standalone mode (nothing changes, just wastes cycles).
+if not is_standalone() and st.session_state.get("autorefresh"):
     time.sleep(10)
     st.rerun()
-
-
-def _fmt_ts(ts):
-    if not ts:
-        return "—"
-    import datetime as _dt
-    return _dt.datetime.fromtimestamp(float(ts)).strftime("%Y-%m-%d %H:%M:%S")
