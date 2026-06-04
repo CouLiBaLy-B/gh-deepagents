@@ -87,6 +87,25 @@ PROVIDERS = {
         "spec_prefix": "groq:",
         "doc": "https://console.groq.com/keys",
     },
+    "openrouter": {
+        "label": "OpenRouter (unified — Anthropic, OpenAI, Llama, Mistral, …)",
+        "env_key": "OPENROUTER_API_KEY",
+        "models": [
+            "anthropic/claude-sonnet-4-5",
+            "anthropic/claude-haiku-4",
+            "openai/gpt-4o-mini",
+            "openai/gpt-4o",
+            "openai/gpt-4.1-mini",
+            "google/gemini-2.5-flash",
+            "google/gemini-2.5-pro",
+            "meta-llama/llama-3.3-70b-instruct",
+            "mistralai/mistral-large-latest",
+            "qwen/qwen-2.5-coder-32b-instruct",
+            "deepseek/deepseek-chat",
+        ],
+        "spec_prefix": "openrouter:",
+        "doc": "https://openrouter.ai/keys",
+    },
     "ollama": {
         "label": "Ollama (local, no API key)",
         "env_key": "",  # no key
