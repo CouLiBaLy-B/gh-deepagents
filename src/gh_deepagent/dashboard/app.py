@@ -6,8 +6,8 @@ import time
 
 import streamlit as st
 
-from .api import APIError, parse_prometheus, sum_by, total
-from .auth_ui import render_user_badge, require_login
+from gh_deepagent.dashboard.api import APIError, parse_prometheus, sum_by, total
+from gh_deepagent.dashboard.auth_ui import render_user_badge, require_login
 
 
 st.set_page_config(
