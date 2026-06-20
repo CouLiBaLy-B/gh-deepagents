@@ -195,3 +195,30 @@ En mode CI/non-interactif : laisser `{}` (autonome).
 5. **Dégraisser les tools doublons** — *moins de confusion, moins de tokens*.
 
 Ces cinq points couvrent ~80 % de la valeur pour ~30 % de l'effort total.
+
+---
+
+## 7. Statut d'implémentation (mis à jour)
+
+Vérifié empiriquement contre `deepagents==0.6.11` installé (signature de
+`create_deep_agent`, `SkillsMiddleware`, `FilesystemPermission`, schéma
+d'interruption HITL). Baseline tests : **193 → 203 passed, 1 skipped**.
+
+| # | Item | Statut | Détail |
+|---|------|--------|--------|
+| 1 | Skills branchés | ✅ Fait | 9 skills migrés en `<name>/SKILL.md` (frontmatter `name`/`description` quotée). Chargés via `skills=[<abs path>]` (backend local) + `_supports()` pour la rétro-compat. Validé : **9/9** remontent dans le system prompt. |
+| 2 | Modèle bon-marché par sous-agent | ✅ Fait | `DEEPAGENT_MODEL_CHEAP` → `planner/reviewer/security/docs-writer/i18n`. coder/debugger/tester/deps-manager/migrator/perf-analyst gardent le modèle fort. |
+| 4 | `memory` natif | ✅ Fait | `memory=["/AGENTS.md"]` (backend local ; tolère l'absence du fichier). Complète la mémoire en couches existante. |
+| 6 | HITL `interrupt_on` | ✅ Fait | Gated par `DEEPAGENT_INTERACTIVE` / `--interactive`. `interrupt_on` + `MemorySaver` ; boucle de reprise console (`_prompt_decisions`) validée de bout en bout. Défaut OFF → CI/queue inchangés. |
+| 7 | `codemod_python` sécurisé | ✅ Fait | Exécution de la transform LLM dans un **sous-processus isolé** (env scrubé sans secrets, timeout 300 s). Format de sortie inchangé (tests verts). |
+| 10 | Skills par sous-agent | ✅ Fait | Chaque sous-agent reçoit `skills=[...]` (les custom subagents n'héritent pas auto). |
+| 12 | Pin deps | ✅ Fait | `deepagents>=0.6.11,<0.8.0`. |
+| 8 | LangSmith | ✅ Déjà présent | `setup_observability()` active LangSmith via `LANGSMITH_TRACING` (env standard). Documenté dans `.env.example`. |
+| 9 | Éval agent | 🟡 Scaffold | `scripts/eval_agent.py` : harnais dry-run (produced_diff / applies / tests_pass). À peupler avec des fixtures + brancher en CI nightly. |
+| 3 | Dégraisser tools (excluded_tools) | ⛔ Différé | `excluded_tools` **n'existe pas** dans `create_deep_agent` 0.6.11 (présent dans la doc d'une version ultérieure). À reprendre lors du passage à 0.8. |
+| 5 | Permissions filesystem | ⛔ Différé | `FilesystemPermission` lève `NotImplementedError` avec tout backend à exécution shell (`LocalShellBackend` & sandboxes) en 0.6.11. Garde-fous assurés autrement (least-privilege toolsets, `root_dir`, garde anti-`main` de `finalize_patch`). |
+| 11 | Streaming typé | 🟡 Différé | L'itération de chunks actuelle fonctionne et est testée ; migration vers les projections typées reportée (risque/bénéfice faible sans test d'intégration LLM). |
+
+### Variables d'environnement ajoutées
+- `DEEPAGENT_MODEL_CHEAP` — modèle économique pour les sous-agents légers.
+- `DEEPAGENT_INTERACTIVE` — `1` pour activer l'approbation HITL (équiv. `--interactive`).

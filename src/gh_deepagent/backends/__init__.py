@@ -110,9 +110,13 @@ class _LocalHandle:
         self.repo_path = repo_path
         try:
             from deepagents.backends import LocalShellBackend
+            # virtual_mode=False is explicit (not just the legacy default): we
+            # rely on absolute host paths to load the bundled skills library
+            # (see agent.build_agent), which virtual mode would sandbox away.
             leaf = LocalShellBackend(
                 root_dir=str(repo_path.resolve()),
                 env={"PATH": "/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin"},
+                virtual_mode=False,
             )
         except ImportError:
             # Test/CI environments without deepagents installed get a sentinel

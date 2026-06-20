@@ -30,12 +30,44 @@ class RunResult:
     diff: Optional[str] = None
 
 
-def _stream(agent, initial_input: dict, max_turns: int) -> str:
+def _prompt_decisions(interrupt, input_fn=input) -> list[dict]:
+    """Turn a HumanInTheLoop interrupt into a list of resume decisions.
+
+    The interrupt value looks like::
+
+        {"action_requests": [{"name", "args", "description"}, ...],
+         "review_configs":  [{"action_name", "allowed_decisions"}, ...]}
+
+    We ask once per pending action and default to *approve* on empty input.
+    Returns one decision dict per action (order matters for the resume).
+    """
+    value = interrupt[0].value if isinstance(interrupt, (list, tuple)) else getattr(interrupt, "value", interrupt)
+    actions = value.get("action_requests", []) if isinstance(value, dict) else []
+    if not actions:
+        return [{"type": "approve"}]
+    decisions: list[dict] = []
+    for a in actions:
+        name, args = a.get("name"), a.get("args")
+        try:
+            ans = input_fn(f"⚠️  Approve tool `{name}` args={args}? [Y/n] ").strip().lower()
+        except EOFError:  # non-interactive stdin → approve
+            ans = ""
+        decisions.append({"type": "reject"} if ans in ("n", "no", "reject") else {"type": "approve"})
+    return decisions
+
+
+def _stream(agent, initial_input: dict, max_turns: int, interactive: bool = False) -> str:
     """Stream the agent, log structured events, observe sub-agent calls.
 
     Also publishes log lines to Redis pub/sub when running inside a job
     (so SSE subscribers see live progress).
+
+    When `interactive` is True, destructive tool calls pause for console
+    approval (the agent is built with `interrupt_on` + a checkpointer) and we
+    resume the graph with the operator's decisions.
     """
+    import uuid
+
     from .observability.metrics import SUBAGENT_CALLS
     from .observability.logging_setup import get_logger
     from .observability.tracing import span
@@ -60,30 +92,50 @@ def _stream(agent, initial_input: dict, max_turns: int) -> str:
         except Exception:
             job_queue = None
 
+    config: dict = {"recursion_limit": max_turns * 4}
+    if interactive:
+        # A checkpointer needs a thread id to persist/resume the paused graph.
+        config["configurable"] = {"thread_id": str(uuid.uuid4())}
+
+    stream_input: object = initial_input
     with span("agent.stream", max_turns=max_turns):
-        for chunk in agent.stream(initial_input, config={"recursion_limit": max_turns * 4}):
-            turns += 1
-            for node, payload in chunk.items():
-                if node not in seen_subagents and node not in {"agent", "tools", "__start__", "__end__"}:
-                    SUBAGENT_CALLS.labels(node).inc()
-                    seen_subagents.add(node)
-                if "messages" in payload:
-                    msg = payload["messages"][-1]
-                    role = getattr(msg, "type", "?")
-                    content = getattr(msg, "content", "") or ""
-                    line = f"[{node}] {role}: {str(content)[:400]}"
-                    console.print(f"[dim]{node}[/] [{role}] {str(content)[:400]}")
-                    logger.info("agent_step", agent_node=node, role=role,
-                                content_preview=str(content)[:200])
-                    if job_queue and job_id:
-                        try: job_queue.append_log(job_id, line)
-                        except Exception: pass
-                    if role == "ai" and content:
-                        final_text = content
-            if turns >= max_turns:
-                console.print("[yellow]Hit max_turns, stopping.[/]")
-                logger.warning("max turns hit", turns=turns)
-                break
+        # Outer loop runs once normally; with HITL it re-enters after each
+        # resume. Bounded by max_turns to avoid an unbounded approval loop.
+        while True:
+            pending_interrupt = None
+            for chunk in agent.stream(stream_input, config=config):
+                if "__interrupt__" in chunk:
+                    pending_interrupt = chunk["__interrupt__"]
+                    continue
+                turns += 1
+                for node, payload in chunk.items():
+                    if node not in seen_subagents and node not in {"agent", "tools", "__start__", "__end__"}:
+                        SUBAGENT_CALLS.labels(node).inc()
+                        seen_subagents.add(node)
+                    if isinstance(payload, dict) and "messages" in payload:
+                        msg = payload["messages"][-1]
+                        role = getattr(msg, "type", "?")
+                        content = getattr(msg, "content", "") or ""
+                        line = f"[{node}] {role}: {str(content)[:400]}"
+                        console.print(f"[dim]{node}[/] [{role}] {str(content)[:400]}")
+                        logger.info("agent_step", agent_node=node, role=role,
+                                    content_preview=str(content)[:200])
+                        if job_queue and job_id:
+                            try: job_queue.append_log(job_id, line)
+                            except Exception: pass
+                        if role == "ai" and content:
+                            final_text = content
+                if turns >= max_turns:
+                    console.print("[yellow]Hit max_turns, stopping.[/]")
+                    logger.warning("max turns hit", turns=turns)
+                    return final_text
+
+            if interactive and pending_interrupt is not None:
+                from langgraph.types import Command
+                decisions = _prompt_decisions(pending_interrupt)
+                stream_input = Command(resume={"decisions": decisions})
+                continue
+            break
     return final_text
 
 
@@ -102,10 +154,16 @@ def _dry_run_result(repo_path: Path, text: str) -> RunResult:
 
 # ---------- public entrypoints ----------
 
-def fix_issue(issue_url: str, dry_run: bool = False, backend: Optional[str] = None) -> RunResult:
+def fix_issue(
+    issue_url: str,
+    dry_run: bool = False,
+    backend: Optional[str] = None,
+    interactive: Optional[bool] = None,
+) -> RunResult:
     """Resolve a GitHub issue and (unless dry_run) open a PR."""
     settings = get_settings()
     settings.assert_ready()
+    interactive = settings.interactive if interactive is None else interactive
 
     ref = IssueRef.from_url(issue_url)
     gh = GitHubOps()
@@ -116,7 +174,8 @@ def fix_issue(issue_url: str, dry_run: bool = False, backend: Optional[str] = No
     console.print(f"[cyan]Cloned[/] {ref.full_name} → {repo_path}")
 
     agent, handle = build_agent(
-        repo_path=repo_path, repo_full_name=ref.full_name, issue_ref=ref, backend_kind=backend
+        repo_path=repo_path, repo_full_name=ref.full_name, issue_ref=ref,
+        backend_kind=backend, interactive=interactive,
     )
     try:
         prompt = textwrap.dedent(f"""\
@@ -134,7 +193,8 @@ def fix_issue(issue_url: str, dry_run: bool = False, backend: Optional[str] = No
             test, then {"DO NOT open a PR — print the diff and stop." if dry_run else f"call finalize_patch with branch name `deepagent/issue-{ref.number}`."}
         """)
 
-        text = _stream(agent, {"messages": [{"role": "user", "content": prompt}]}, settings.max_turns)
+        text = _stream(agent, {"messages": [{"role": "user", "content": prompt}]},
+                       settings.max_turns, interactive=interactive)
         if dry_run:
             return _dry_run_result(repo_path, text)
         return RunResult(ok=bool(_extract_pr_url(text)), summary=text, pr_url=_extract_pr_url(text))
@@ -147,11 +207,13 @@ def evolve_code(
     instruction: str,
     dry_run: bool = False,
     backend: Optional[str] = None,
+    interactive: Optional[bool] = None,
 ) -> RunResult:
     """Apply a free-form evolution request to the repo."""
     repo_full_name = normalize_repo_full_name(repo_full_name)
     settings = get_settings()
     settings.assert_ready()
+    interactive = settings.interactive if interactive is None else interactive
 
     gh = GitHubOps()
     console.rule(f"[bold green]Evolve {repo_full_name}")
@@ -159,7 +221,8 @@ def evolve_code(
     console.print(f"[cyan]Cloned[/] {repo_full_name} → {repo_path}")
 
     agent, handle = build_agent(
-        repo_path=repo_path, repo_full_name=repo_full_name, backend_kind=backend
+        repo_path=repo_path, repo_full_name=repo_full_name, backend_kind=backend,
+        interactive=interactive,
     )
     slug = f"evolve-{int(time.time())}"
     try:
@@ -173,7 +236,8 @@ def evolve_code(
             Investigate the codebase, build a minimal plan, implement the change, run the
             tests, and {"print the diff (no PR)." if dry_run else f"call finalize_patch with branch name `deepagent/{slug}`."}
         """)
-        text = _stream(agent, {"messages": [{"role": "user", "content": prompt}]}, settings.max_turns)
+        text = _stream(agent, {"messages": [{"role": "user", "content": prompt}]},
+                       settings.max_turns, interactive=interactive)
         if dry_run:
             return _dry_run_result(repo_path, text)
         return RunResult(ok=bool(_extract_pr_url(text)), summary=text, pr_url=_extract_pr_url(text))
@@ -187,6 +251,7 @@ def iterate_pr(
     instruction: str,
     dry_run: bool = False,
     backend: Optional[str] = None,
+    interactive: Optional[bool] = None,
 ) -> RunResult:
     """Push additional commits to the branch backing an existing PR.
 
@@ -195,6 +260,7 @@ def iterate_pr(
     repo_full_name = normalize_repo_full_name(repo_full_name)
     settings = get_settings()
     settings.assert_ready()
+    interactive = settings.interactive if interactive is None else interactive
     gh = GitHubOps()
     repo = gh.get_repo(repo_full_name)
     pr = repo.get_pull(pr_number)
@@ -215,6 +281,7 @@ def iterate_pr(
         backend_kind=backend,
         base_branch=base_branch,
         existing_branch=head_branch,
+        interactive=interactive,
     )
     try:
         # Give the agent the existing PR context so it understands what to amend.
@@ -243,7 +310,8 @@ def iterate_pr(
             Make the requested changes ON TOP of the current branch. Run the tests.
             When done, {"print the diff and stop." if dry_run else "call finalize_patch (branch_name argument will be ignored — the existing branch is used)."}
         """)
-        text = _stream(agent, {"messages": [{"role": "user", "content": prompt}]}, settings.max_turns)
+        text = _stream(agent, {"messages": [{"role": "user", "content": prompt}]},
+                       settings.max_turns, interactive=interactive)
         if dry_run:
             return _dry_run_result(repo_path, text)
         # Even if the LLM didn't echo a URL, return the existing PR URL.

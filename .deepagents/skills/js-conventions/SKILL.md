@@ -1,3 +1,9 @@
+---
+name: js-conventions
+description: "JavaScript/TypeScript style conventions: formatting (prettier), imports, error handling, async. Use when the target repo is JS/TS (package.json present)."
+license: MIT
+---
+
 # Skill: js-conventions
 
 Apply only when the target repo is JS/TS. Override with repo-local config

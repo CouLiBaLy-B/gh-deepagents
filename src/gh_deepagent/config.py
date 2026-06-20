@@ -15,6 +15,9 @@ load_dotenv()
 class Settings:
     # LLM
     model: str = field(default_factory=lambda: os.getenv("DEEPAGENT_MODEL", "ollama:qwen2.5-coder:14b"))
+    # Optional cheaper/faster model used by read-only & light sub-agents
+    # (planner, reviewer, security, docs-writer, i18n). Falls back to `model`.
+    model_cheap: str = field(default_factory=lambda: os.getenv("DEEPAGENT_MODEL_CHEAP", ""))
     ollama_base_url: str = field(default_factory=lambda: os.getenv("OLLAMA_BASE_URL", "http://localhost:11434"))
 
     # GitHub
@@ -23,6 +26,12 @@ class Settings:
 
     # Agent
     max_turns: int = field(default_factory=lambda: int(os.getenv("DEEPAGENT_MAX_TURNS", "40")))
+    # Human-in-the-loop: pause for console approval before destructive tools
+    # (finalize_patch / codemod_python / ast_grep_rewrite). Default OFF so that
+    # CI / webhook / queue runs stay fully autonomous.
+    interactive: bool = field(
+        default_factory=lambda: os.getenv("DEEPAGENT_INTERACTIVE", "0").lower() in ("1", "true", "yes")
+    )
     workdir: Path = field(default_factory=lambda: Path(os.getenv("DEEPAGENT_WORKDIR", "/tmp/gh-deepagent")))
     trigger_label: str = field(default_factory=lambda: os.getenv("DEEPAGENT_TRIGGER_LABEL", "deepagent"))
     review_label: str = field(default_factory=lambda: os.getenv("DEEPAGENT_REVIEW_LABEL", "deepagent-review"))

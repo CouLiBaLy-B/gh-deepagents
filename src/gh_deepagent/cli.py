@@ -36,14 +36,23 @@ def version():
     console.print(f"gh-deepagent {__version__}")
 
 
+InteractiveOpt = typer.Option(
+    None,
+    "--interactive/--no-interactive",
+    help="Pause for console approval before destructive tools "
+         "(finalize_patch / codemod / ast-grep rewrite). Defaults to DEEPAGENT_INTERACTIVE.",
+)
+
+
 @app.command()
 def fix(
     issue_url: str = typer.Argument(..., help="Full GitHub issue URL."),
     dry_run: bool = typer.Option(False, "--dry-run", help="Don't open a PR; print the diff."),
     backend: Optional[str] = BackendOpt,
+    interactive: Optional[bool] = InteractiveOpt,
 ):
     """Resolve a GitHub issue end-to-end → PR."""
-    res = fix_issue(issue_url, dry_run=dry_run, backend=backend)
+    res = fix_issue(issue_url, dry_run=dry_run, backend=backend, interactive=interactive)
     _print_result(res)
 
 
@@ -53,12 +62,13 @@ def evolve(
     instruction: str = typer.Option(..., "--instruction", "-i", help="What to change."),
     dry_run: bool = typer.Option(False, "--dry-run"),
     backend: Optional[str] = BackendOpt,
+    interactive: Optional[bool] = InteractiveOpt,
 ):
     """Apply a free-form code evolution request → PR."""
     repo = repo or get_settings().default_repo
     if not repo:
         raise typer.BadParameter("Provide --repo or set DEEPAGENT_DEFAULT_REPO.")
-    res = evolve_code(repo, instruction, dry_run=dry_run, backend=backend)
+    res = evolve_code(repo, instruction, dry_run=dry_run, backend=backend, interactive=interactive)
     _print_result(res)
 
 
@@ -69,9 +79,10 @@ def iterate(
     instruction: str = typer.Option(..., "--instruction", "-i"),
     dry_run: bool = typer.Option(False, "--dry-run"),
     backend: Optional[str] = BackendOpt,
+    interactive: Optional[bool] = InteractiveOpt,
 ):
     """Iterate on an EXISTING PR (push more commits to its branch)."""
-    res = iterate_pr(repo, pr, instruction, dry_run=dry_run, backend=backend)
+    res = iterate_pr(repo, pr, instruction, dry_run=dry_run, backend=backend, interactive=interactive)
     _print_result(res)
 
 

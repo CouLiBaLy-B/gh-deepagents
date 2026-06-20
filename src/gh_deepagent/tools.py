@@ -21,6 +21,8 @@ import os
 import re
 import shutil
 import subprocess
+import sys
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, TYPE_CHECKING
@@ -332,40 +334,12 @@ def make_toolbox(
         The script can import `libcst` (install separately) for concrete-syntax
         manipulation, or use plain string operations / ast / re for simpler cases.
 
-        SECURITY: the script runs in this process. The migrator sub-agent is the
-        only one allowed to use this tool.
+        SECURITY: the (LLM-authored) script is executed in an **isolated child
+        process** with a scrubbed environment and a hard timeout — never in the
+        long-lived agent process. The migrator sub-agent is the only one allowed
+        to use this tool.
         """
-        ns: dict = {}
-        try:
-            exec(compile(script, "<codemod>", "exec"), ns)  # noqa: S102 — sandboxed by tool privilege
-        except Exception as e:
-            return f"codemod script failed to compile: {e}"
-        transform = ns.get("transform")
-        if not callable(transform):
-            return "codemod script must define `transform(source, path) -> str`."
-        changed: list[str] = []
-        errors: list[str] = []
-        for p in repo_path.glob(glob):
-            if not p.is_file() or ".git" in p.parts:
-                continue
-            try:
-                src = p.read_text(encoding="utf-8")
-            except UnicodeDecodeError:
-                continue
-            try:
-                new = transform(src, str(p.relative_to(repo_path)))
-            except Exception as e:
-                errors.append(f"{p}: {e}")
-                continue
-            if new is not None and new != src:
-                p.write_text(new, encoding="utf-8")
-                changed.append(str(p.relative_to(repo_path)))
-        report = [f"changed: {len(changed)} file(s)"]
-        report += [f"  {c}" for c in changed[:50]]
-        if errors:
-            report.append(f"errors: {len(errors)}")
-            report += [f"  {e}" for e in errors[:20]]
-        return "\n".join(report)
+        return _run_codemod_subprocess(repo_path, script, glob)
 
     # ========================================================== PERF
     @tool
@@ -651,6 +625,94 @@ def make_toolbox(
 # Backwards-compat alias used by old callers.
 def make_tools(*args, **kwargs):  # pragma: no cover - thin shim
     return make_toolbox(*args, **kwargs).all
+
+
+# =================================================================
+#                       CODEMOD (ISOLATED)
+# =================================================================
+
+# Harness executed in a child process. It imports the user-supplied `transform`,
+# applies it across the glob, writes changes, and prints a report in the SAME
+# format the in-process implementation used to (so behaviour is unchanged).
+_CODEMOD_HARNESS = r'''
+import sys
+from pathlib import Path
+
+script_path, repo_str, glob = sys.argv[1], sys.argv[2], sys.argv[3]
+repo_path = Path(repo_str)
+source_code = Path(script_path).read_text(encoding="utf-8")
+
+ns = {}
+try:
+    exec(compile(source_code, "<codemod>", "exec"), ns)
+except Exception as e:
+    print(f"codemod script failed to compile: {e}")
+    sys.exit(0)
+
+transform = ns.get("transform")
+if not callable(transform):
+    print("codemod script must define `transform(source, path) -> str`.")
+    sys.exit(0)
+
+changed = []
+errors = []
+for p in repo_path.glob(glob):
+    if not p.is_file() or ".git" in p.parts:
+        continue
+    try:
+        src = p.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        continue
+    try:
+        new = transform(src, str(p.relative_to(repo_path)))
+    except Exception as e:
+        errors.append(f"{p}: {e}")
+        continue
+    if new is not None and new != src:
+        p.write_text(new, encoding="utf-8")
+        changed.append(str(p.relative_to(repo_path)))
+
+report = [f"changed: {len(changed)} file(s)"]
+report += [f"  {c}" for c in changed[:50]]
+if errors:
+    report.append(f"errors: {len(errors)}")
+    report += [f"  {e}" for e in errors[:20]]
+print("\n".join(report))
+'''
+
+
+def _run_codemod_subprocess(repo_path: Path, script: str, glob: str) -> str:
+    """Execute an LLM-authored codemod in an isolated child process.
+
+    Isolation properties vs the old in-process ``exec``:
+    - separate process → cannot corrupt/inspect the long-lived agent's memory;
+    - scrubbed environment → no GITHUB_TOKEN / API keys leak into the script;
+    - hard timeout → a runaway/infinite codemod can't hang the agent.
+    """
+    with tempfile.TemporaryDirectory() as td:
+        script_file = Path(td) / "codemod_script.py"
+        harness_file = Path(td) / "codemod_harness.py"
+        script_file.write_text(script, encoding="utf-8")
+        harness_file.write_text(_CODEMOD_HARNESS, encoding="utf-8")
+
+        # Minimal env: keep PATH/HOME (and PYTHONPATH if the agent set one) so
+        # the child can still import libcst etc. from site-packages, but drop
+        # every secret-bearing variable.
+        safe_env = {"PATH": os.environ.get("PATH", ""), "HOME": os.environ.get("HOME", "")}
+        if "PYTHONPATH" in os.environ:
+            safe_env["PYTHONPATH"] = os.environ["PYTHONPATH"]
+
+        try:
+            proc = subprocess.run(
+                [sys.executable, str(harness_file), str(script_file), str(repo_path), glob],
+                capture_output=True, text=True, timeout=300, env=safe_env, cwd=str(repo_path),
+            )
+        except subprocess.TimeoutExpired:
+            return "codemod timed out after 300s (aborted, no further changes)."
+        out = (proc.stdout or "").strip()
+        if proc.returncode != 0 and not out:
+            return f"codemod failed [exit {proc.returncode}]:\n{(proc.stderr or '')[-2000:]}"
+        return out
 
 
 # =================================================================

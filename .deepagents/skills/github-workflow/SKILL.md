@@ -1,3 +1,9 @@
+---
+name: github-workflow
+description: "GitHub branch/PR workflow conventions (branch naming, PR body sections, linking issues). Use when opening or updating a PR or naming a branch."
+license: MIT
+---
+
 # Skill: github-workflow
 
 Use this skill when working on any task that targets a GitHub repository.

@@ -1,3 +1,9 @@
+---
+name: i18n-conventions
+description: "Internationalization catalogue conventions: key naming, placeholder syntax, locale parity, never auto-translating. Use when touching translation files or user-facing strings."
+license: MIT
+---
+
 # Skill: i18n-conventions
 
 ## Universal rules
