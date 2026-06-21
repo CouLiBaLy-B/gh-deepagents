@@ -214,7 +214,7 @@ d'interruption HITL). Baseline tests : **193 → 203 passed, 1 skipped**.
 | 10 | Skills par sous-agent | ✅ Fait | Chaque sous-agent reçoit `skills=[...]` (les custom subagents n'héritent pas auto). |
 | 12 | Pin deps | ✅ Fait | `deepagents>=0.6.11,<0.8.0`. |
 | 8 | LangSmith | ✅ Déjà présent | `setup_observability()` active LangSmith via `LANGSMITH_TRACING` (env standard). Documenté dans `.env.example`. |
-| 9 | Éval agent | 🟡 Scaffold | `scripts/eval_agent.py` : harnais dry-run (produced_diff / applies / tests_pass). À peupler avec des fixtures + brancher en CI nightly. |
+| 9 | Éval agent | ✅ Fait | `scripts/eval_agent.py` : 4 fixtures locales **hermétiques** (bugfix, edge-case, feature+test, refactor cross-fichiers), chacune avec une solution de référence. `--check-fixtures` valide leur solidité sans LLM ; le mode normal lance l'agent et score (changed/tests_pass/checks_ok). `tests/test_eval_fixtures.py` garde les fixtures honnêtes en CI. |
 | 3 | Dégraisser tools (excluded_tools) | ⛔ Différé | `excluded_tools` **n'existe pas** dans `create_deep_agent` 0.6.11 (présent dans la doc d'une version ultérieure). À reprendre lors du passage à 0.8. |
 | 5 | Permissions filesystem | ⛔ Différé | `FilesystemPermission` lève `NotImplementedError` avec tout backend à exécution shell (`LocalShellBackend` & sandboxes) en 0.6.11. Garde-fous assurés autrement (least-privilege toolsets, `root_dir`, garde anti-`main` de `finalize_patch`). |
 | 11 | Streaming typé | 🟡 Différé | L'itération de chunks actuelle fonctionne et est testée ; migration vers les projections typées reportée (risque/bénéfice faible sans test d'intégration LLM). |
