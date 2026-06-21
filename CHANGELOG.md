@@ -4,6 +4,40 @@ All notable changes are documented here. This file is maintained automatically
 by [release-please](https://github.com/googleapis/release-please-action) from
 [Conventional Commits](https://www.conventionalcommits.org/).
 
+## [0.6.2](https://github.com/CouLiBaLy-B/gh-deepagents/compare/gh-deepagent-v0.6.1...gh-deepagent-v0.6.2) (2026-06-21)
+
+
+### ✨ Features
+
+* 3 deepagents features — layered memory, MetricsMiddleware, structured review ([f748285](https://github.com/CouLiBaLy-B/gh-deepagents/commit/f7482857c7e8d8ec86bf34d74c1b1024cd980cb7))
+* **agent:** Wire skills, per-subagent cheap model, native memory, HITL + isolate codemod ([43dff99](https://github.com/CouLiBaLy-B/gh-deepagents/commit/43dff99de3c101fe22ff7fcb6346d91e8232c03a))
+* **dashboard:** In-UI LLM provider/model/token + accept any repo URL format ([2bc80cd](https://github.com/CouLiBaLy-B/gh-deepagents/commit/2bc80cd9efa80019caf02d83b448842dfd4f78b5))
+* **llm:** Add OpenRouter as a unified provider ([14f3545](https://github.com/CouLiBaLy-B/gh-deepagents/commit/14f3545190f0c5123a074d14a34077067ec20760))
+
+
+### 🐛 Bug Fixes
+
+* **ci:** Read HF_USER / HF_*_SPACE from secrets instead of vars ([76dfd8b](https://github.com/CouLiBaLy-B/gh-deepagents/commit/76dfd8b8f7e003c85ff7b5681beff79a006d0651))
+* **ci:** Remove secrets context from job-level name ([a5b395d](https://github.com/CouLiBaLy-B/gh-deepagents/commit/a5b395da566c864f1293cc666cbb51163d44c736))
+* **ci:** Stop copying deleted router.py in all-in-one workflow ([690bbc5](https://github.com/CouLiBaLy-B/gh-deepagents/commit/690bbc572cdc58ecfbeff1aed697a4dbbcc54149))
+* **ci:** Use vars.HF_* (they were registered as Repository Variables) ([d157313](https://github.com/CouLiBaLy-B/gh-deepagents/commit/d157313104a1240617a78c7b420215a69fefde2e))
+* **dashboard:** Actually persist standalone-mode + overview changes ([3607a75](https://github.com/CouLiBaLy-B/gh-deepagents/commit/3607a758b935cf7877a79b3bc44c968b55043c2a))
+* **dashboard:** Replace nested f-string with escaped quotes (Python &lt;3.12 compat) ([612941b](https://github.com/CouLiBaLy-B/gh-deepagents/commit/612941bf96481f3259d07a8911342b17010759e6))
+* **dashboard:** Standalone-mode + helpful 404 hints + cleaner overview ([b87f6a1](https://github.com/CouLiBaLy-B/gh-deepagents/commit/b87f6a171a1b52e7372e4175d3381eae8cd7e780))
+* **dashboard:** Use absolute imports + drop incompatible Streamlit flags ([4cdd0b8](https://github.com/CouLiBaLy-B/gh-deepagents/commit/4cdd0b85383b7fd2820965fc7f606fd67a0f0ef1))
+* **deploy:** Expose Streamlit directly on :7860 for HF all-in-one demo ([a8049f9](https://github.com/CouLiBaLy-B/gh-deepagents/commit/a8049f92932ae07b7476089f801eab858d62de52))
+* **deps:** Install all LLM providers in HF Spaces + actionable errors ([6cb6620](https://github.com/CouLiBaLy-B/gh-deepagents/commit/6cb6620e58ab6aedfbbcc20d5180306f585548ba))
+
+
+### 📚 Documentation
+
+* Deepagents best-practices review + improvement plan ([0a4c586](https://github.com/CouLiBaLy-B/gh-deepagents/commit/0a4c586624244e437f4c12e48bc31080a9a1ea62))
+
+
+### ✅ Tests
+
+* **eval:** Populate eval harness with 4 hermetic fixtures + CI soundness check ([68627b0](https://github.com/CouLiBaLy-B/gh-deepagents/commit/68627b0463bab7e609d5f1275b80257d9eb71f01))
+
 ## [0.6.1](https://github.com/CouLiBaLy-B/gh-deepagents/compare/gh-deepagent-v0.6.0...gh-deepagent-v0.6.1) (2026-06-03)
 
 
