@@ -1,3 +1,9 @@
+---
+name: security-checklist
+description: "Security review checklist: secrets scanning, dependency CVEs, injection, dangerous patterns (eval/exec/shell=True/pickle), input validation. Use before finalizing any patch."
+license: MIT
+---
+
 # Skill: security-checklist
 
 Run through this before every `finalize_patch`. Delegate to the `security`

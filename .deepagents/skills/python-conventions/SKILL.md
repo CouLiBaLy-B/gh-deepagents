@@ -1,3 +1,9 @@
+---
+name: python-conventions
+description: "Python style conventions: ruff format/lint, type hints, import order, error handling, async rules, src/ layout. Use when the target repo is Python (pyproject.toml or .py files present)."
+license: MIT
+---
+
 # Skill: python-conventions
 
 Apply only when the target repo is Python. Override with repo-local `AGENTS.md`

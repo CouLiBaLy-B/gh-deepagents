@@ -43,7 +43,8 @@ fix_issue(url)
 | Push direct sur `main`                  | Prompt + branch policy + GitHub branch protection       |
 | Fuite de secrets dans le diff           | Pré-commit hook conseillé (`gitleaks`)                  |
 | Boucle infinie / coût                   | `DEEPAGENT_MAX_TURNS` + `concurrency` dans Actions      |
-| Tool calls dangereux (drop tables...)   | Configurer `interrupt_on={...}` pour HITL en CLI local  |
+| Tool calls dangereux (drop tables...)   | HITL via `--interactive` / `DEEPAGENT_INTERACTIVE=1` (approbation console avant `finalize_patch`/`codemod_python`/`ast_grep_rewrite`) |
+| Codemod LLM exécuté en clair            | `codemod_python` tourne dans un sous-processus isolé (env scrubé, timeout) |
 
 ## Pourquoi `LocalShellBackend` plutôt qu'un sandbox distant ?
 

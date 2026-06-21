@@ -1,3 +1,9 @@
+---
+name: commit-conventions
+description: "Conventional Commits format for commit messages and PR titles (type(scope): subject, body, footers). Use when writing commits, PR titles, or composing finalize_patch messages."
+license: MIT
+---
+
 # Skill: commit-conventions
 
 Always write commits in **Conventional Commits** format.

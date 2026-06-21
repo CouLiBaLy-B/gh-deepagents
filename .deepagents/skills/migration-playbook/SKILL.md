@@ -1,3 +1,9 @@
+---
+name: migration-playbook
+description: "Large-scale structural rewrite playbook using ast-grep and libcst codemods: scope, dry-run, apply in batches, reformat, test. Use for renames, API swaps, deprecation removals, or changes spanning many files."
+license: MIT
+---
+
 # Skill: migration-playbook
 
 Use when a change must be applied **mechanically** across many files (renames,

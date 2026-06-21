@@ -1,3 +1,9 @@
+---
+name: testing-patterns
+description: "Testing patterns and conventions: test structure, naming, fixtures, coverage of new behaviour, runner detection. Use when writing or extending tests."
+license: MIT
+---
+
 # Skill: testing-patterns
 
 When adding tests, follow the conventions of the host project first. These are

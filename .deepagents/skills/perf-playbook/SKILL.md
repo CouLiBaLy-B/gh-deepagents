@@ -1,3 +1,9 @@
+---
+name: perf-playbook
+description: "Empirical performance investigation playbook: reproduce, baseline, profile (py-spy/cProfile), find the hotspot, validate with before/after benchmarks. Use for 'it's slow', regressions, high CPU/memory, or hot loops."
+license: MIT
+---
+
 # Skill: perf-playbook
 
 Empirical performance work. **Never optimise without numbers.**
