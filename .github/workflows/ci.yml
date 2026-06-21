@@ -28,7 +28,7 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
           cache: pip
-      - run: pip install -e ".[dashboard,webhook,dev]"
+      - run: pip install -e ".[dashboard,webhook,dev,openai]"
       - run: pytest -q
 
   lint:
